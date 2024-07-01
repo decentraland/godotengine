@@ -34,79 +34,7 @@
 #include "scene/resources/bit_map.h"
 
 void PortableCompressedTexture2D::_set_data(const Vector<uint8_t> &p_data) {
-	if (p_data.size() == 0) {
-		return; //nothing to do
-	}
-
-	const uint8_t *data = p_data.ptr();
-	uint32_t data_size = p_data.size();
-	ERR_FAIL_COND(data_size < 20);
-	compression_mode = CompressionMode(decode_uint32(data + 0));
-	format = Image::Format(decode_uint32(data + 4));
-	uint32_t mipmap_count = decode_uint32(data + 8);
-	size.width = decode_uint32(data + 12);
-	size.height = decode_uint32(data + 16);
-	mipmaps = mipmap_count > 1;
-
-	data += 20;
-	data_size -= 20;
-
-	Ref<Image> image;
-
-	switch (compression_mode) {
-		case COMPRESSION_MODE_LOSSLESS:
-		case COMPRESSION_MODE_LOSSY: {
-			Vector<uint8_t> image_data;
-
-			ERR_FAIL_COND(data_size < 4);
-			for (uint32_t i = 0; i < mipmap_count; i++) {
-				uint32_t mipsize = decode_uint32(data);
-				data += 4;
-				data_size -= 4;
-				ERR_FAIL_COND(mipsize < data_size);
-				Ref<Image> img = memnew(Image(data, data_size));
-				ERR_FAIL_COND(img->is_empty());
-				if (img->get_format() != format) { // May happen due to webp/png in the tiny mipmaps.
-					img->convert(format);
-				}
-				image_data.append_array(img->get_data());
-
-				data += mipsize;
-				data_size -= mipsize;
-			}
-
-			image = Ref<Image>(memnew(Image(size.width, size.height, mipmap_count > 1, format, image_data)));
-
-		} break;
-		case COMPRESSION_MODE_BASIS_UNIVERSAL: {
-			ERR_FAIL_NULL(Image::basis_universal_unpacker_ptr);
-			image = Image::basis_universal_unpacker_ptr(data, data_size);
-
-		} break;
-		case COMPRESSION_MODE_S3TC:
-		case COMPRESSION_MODE_ETC2:
-		case COMPRESSION_MODE_BPTC: {
-			image = Ref<Image>(memnew(Image(size.width, size.height, mipmap_count > 1, format, p_data.slice(20))));
-		} break;
-	}
-	ERR_FAIL_COND(image.is_null());
-
-	if (texture.is_null()) {
-		texture = RenderingServer::get_singleton()->texture_2d_create(image);
-	} else {
-		RID new_texture = RenderingServer::get_singleton()->texture_2d_create(image);
-		RenderingServer::get_singleton()->texture_replace(texture, new_texture);
-	}
-
-	image_stored = true;
-	RenderingServer::get_singleton()->texture_set_size_override(texture, size_override.width, size_override.height);
-	alpha_cache.unref();
-
-	if (keep_all_compressed_buffers || keep_compressed_buffer) {
-		compressed_buffer = p_data;
-	} else {
-		compressed_buffer.clear();
-	}
+	return;
 }
 
 PortableCompressedTexture2D::CompressionMode PortableCompressedTexture2D::get_compression_mode() const {
@@ -119,61 +47,32 @@ Vector<uint8_t> PortableCompressedTexture2D::_get_data() const {
 void PortableCompressedTexture2D::create_from_image(const Ref<Image> &p_image, CompressionMode p_compression_mode, bool p_normal_map, float p_lossy_quality) {
 	ERR_FAIL_COND(p_image.is_null() || p_image->is_empty());
 
-	Vector<uint8_t> buffer;
+	ERR_FAIL_COND_MSG(!p_image->is_compressed(), "Image is not compressed");
 
-	buffer.resize(20);
-	encode_uint32(p_compression_mode, buffer.ptrw());
-	encode_uint32(p_image->get_format(), buffer.ptrw() + 4);
-	encode_uint32(p_image->get_mipmap_count() + 1, buffer.ptrw() + 8);
-	encode_uint32(p_image->get_width(), buffer.ptrw() + 12);
-	encode_uint32(p_image->get_height(), buffer.ptrw() + 16);
+	//Ref<Image> copy = Image::create_from_data(p_image->get_width(), p_image->get_height(), false, p_image->get_format(), p_image->get_data());
 
-	switch (p_compression_mode) {
-		case COMPRESSION_MODE_LOSSLESS:
-		case COMPRESSION_MODE_LOSSY: {
-			for (int i = 0; i < p_image->get_mipmap_count() + 1; i++) {
-				Vector<uint8_t> data;
-				if (p_compression_mode == COMPRESSION_MODE_LOSSY) {
-					data = Image::webp_lossy_packer(p_image->get_image_from_mipmap(i), p_lossy_quality);
-				} else {
-					data = Image::webp_lossless_packer(p_image->get_image_from_mipmap(i));
-				}
-				int data_len = data.size();
-				buffer.resize(buffer.size() + 4);
-				encode_uint32(data_len, buffer.ptrw() + buffer.size() - 4);
-				buffer.append_array(data);
-			}
-		} break;
-		case COMPRESSION_MODE_BASIS_UNIVERSAL: {
-			Image::UsedChannels uc = p_image->detect_used_channels(p_normal_map ? Image::COMPRESS_SOURCE_NORMAL : Image::COMPRESS_SOURCE_GENERIC);
-			Vector<uint8_t> budata = Image::basis_universal_packer(p_image, uc);
-			buffer.append_array(budata);
+	//ERR_FAIL_COND_MSG(p_image.is_null(), "ERR_INVALID_PARAMETER");
 
-		} break;
-		case COMPRESSION_MODE_S3TC:
-		case COMPRESSION_MODE_ETC2:
-		case COMPRESSION_MODE_BPTC: {
-			Ref<Image> copy = p_image->duplicate();
-			switch (p_compression_mode) {
-				case COMPRESSION_MODE_S3TC:
-					copy->compress(Image::COMPRESS_S3TC);
-					break;
-				case COMPRESSION_MODE_ETC2:
-					copy->compress(Image::COMPRESS_ETC2);
-					break;
-				case COMPRESSION_MODE_BPTC:
-					copy->compress(Image::COMPRESS_BPTC);
-					break;
-				default: {
-				};
-			}
+	size = p_image->get_size();
 
-			buffer.append_array(copy->get_data());
-
-		} break;
+	if (texture.is_valid()) {
+		RID new_texture = RS::get_singleton()->texture_2d_create(p_image);
+		RS::get_singleton()->texture_replace(texture, new_texture);
+	} else {
+		texture = RS::get_singleton()->texture_2d_create(p_image);
 	}
 
-	_set_data(buffer);
+	if (size.width || size.height) {
+		RenderingServer::get_singleton()->texture_set_size_override(texture, size.width, size.height);
+	}
+
+	format = p_image->get_format();
+
+	image_stored = true;
+	alpha_cache.unref();
+
+	notify_property_list_changed();
+	emit_changed();
 }
 
 Image::Format PortableCompressedTexture2D::get_format() const {
@@ -197,15 +96,14 @@ int PortableCompressedTexture2D::get_height() const {
 }
 
 RID PortableCompressedTexture2D::get_rid() const {
-	if (texture.is_null()) {
-		// We are in trouble, create something temporary.
-		texture = RenderingServer::get_singleton()->texture_2d_placeholder_create();
+	if (!texture.is_valid()) {
+		texture = RS::get_singleton()->texture_2d_placeholder_create();
 	}
 	return texture;
 }
 
 bool PortableCompressedTexture2D::has_alpha() const {
-	return (format == Image::FORMAT_LA8 || format == Image::FORMAT_RGBA8);
+	return false;
 }
 
 void PortableCompressedTexture2D::draw(RID p_canvas_item, const Point2 &p_pos, const Color &p_modulate, bool p_transpose) const {
@@ -263,12 +161,12 @@ bool PortableCompressedTexture2D::is_pixel_opaque(int p_x, int p_y) const {
 }
 
 void PortableCompressedTexture2D::set_size_override(const Size2 &p_size) {
-	size_override = p_size;
-	RenderingServer::get_singleton()->texture_set_size_override(texture, size_override.width, size_override.height);
+	size = p_size;
+	RenderingServer::get_singleton()->texture_set_size_override(texture, size.width, size.height);
 }
 
 Size2 PortableCompressedTexture2D::get_size_override() const {
-	return size_override;
+	return size;
 }
 
 void PortableCompressedTexture2D::set_path(const String &p_path, bool p_take_over) {
