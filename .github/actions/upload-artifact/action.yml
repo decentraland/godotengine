@@ -8,13 +8,17 @@ inputs:
     description: The path to upload.
     required: true
     default: "bin/*"
+  retention-days:
+    description: Retention days for the artifact
+    required: false
+    default: 14
+
 runs:
   using: "composite"
   steps:
     - name: Upload Godot Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
         name: ${{ inputs.name }}
         path: ${{ inputs.path }}
-        # Default is 90 days.
-        retention-days: 60
+        retention-days: ${{ inputs.retention-days }}

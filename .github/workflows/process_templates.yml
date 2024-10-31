@@ -1,0 +1,58 @@
+name: Process templates
+on:
+  workflow_call:
+
+# Global Settings
+env:
+  GODOT_VERSION: 4.2.1
+
+concurrency:
+  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
+  cancel-in-progress: true
+
+jobs:
+  process-templates:
+    runs-on: "ubuntu-22.04"
+    name: Process Godot Templates
+
+    steps:
+      - name: Download artifacts from ios-template
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+
+      - name: Download Godot Templates
+        run: |
+          curl -L -o Godot_export_templates.tpz https://github.com/godotengine/godot/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_export_templates.tpz
+          unzip Godot_export_templates.tpz
+
+      - name: Uncompress ios.zip from Godot Templates
+        run: unzip -q templates/ios.zip -d ios
+
+      - name: Prepare iOS Files
+        run: |
+          cp ./artifacts/ios-template/libgodot.ios.template_debug.arm64.a ios/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template/libgodot.ios.template_release.arm64.a ios/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template/libgodot.ios.template_debug.x86_64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template/libgodot.ios.template_release.x86_64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cd ios
+          zip -q -9 -r ../ios.zip .
+          cd ..
+          cp ios.zip templates/ios.zip
+
+      - name: Upload templates
+        uses: actions/upload-artifact@v4
+        with:
+          name: templates
+          retention-days: 1 # enought time to release
+          path: |
+            templates/ios.zip
+            templates/android_debug.apk
+            templates/android_release.apk
+            templates/android_source.zip
+            templates/linux_debug.x86_64
+            templates/linux_release.x86_64
+            templates/macos.zip
+            templates/version.txt
+            templates/windows_debug_x86_64.exe
+            templates/windows_release_x86_64.exe
