@@ -40,19 +40,29 @@ jobs:
           cd ..
           cp ios.zip templates/ios.zip
 
+      - name: Compress selected template files
+        run: |
+          mkdir compressed_templates
+          files_to_compress=(
+            "templates/ios.zip"
+            "templates/android_debug.apk"
+            "templates/android_release.apk"
+            "templates/android_source.zip"
+            "templates/linux_debug.x86_64"
+            "templates/linux_release.x86_64"
+            "templates/macos.zip"
+            "templates/version.txt"
+            "templates/windows_debug_x86_64.exe"
+            "templates/windows_release_x86_64.exe"
+          )
+          
+          for file in "${files_to_compress[@]}"; do
+            zip -q -9 "compressed_templates/$(basename "$file").zip" "$file"
+          done
+
       - name: Upload templates
         uses: actions/upload-artifact@v4
         with:
           name: templates
-          retention-days: 1 # enought time to release
-          path: |
-            templates/ios.zip
-            templates/android_debug.apk
-            templates/android_release.apk
-            templates/android_source.zip
-            templates/linux_debug.x86_64
-            templates/linux_release.x86_64
-            templates/macos.zip
-            templates/version.txt
-            templates/windows_debug_x86_64.exe
-            templates/windows_release_x86_64.exe
+          retention-days: 1
+          path: compressed_templates
