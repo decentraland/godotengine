@@ -4,7 +4,7 @@ on:
 
 # Global Settings
 env:
-  GODOT_VERSION: 4.2.1
+  GODOT_VERSION: 4.3
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
@@ -33,8 +33,8 @@ jobs:
         run: |
           cp ./artifacts/ios-template/libgodot.ios.template_debug.arm64.a ios/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
           cp ./artifacts/ios-template/libgodot.ios.template_release.arm64.a ios/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template/libgodot.ios.template_debug.x86_64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
-          cp ./artifacts/ios-template/libgodot.ios.template_release.x86_64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template/libgodot.ios.template_debug.arm64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template/libgodot.ios.template_release.arm64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
           cd ios
           zip -q -9 -r ../ios.zip .
           cd ..

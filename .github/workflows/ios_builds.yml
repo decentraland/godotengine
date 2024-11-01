@@ -4,7 +4,7 @@ on:
 
 # Global Settings
 env:
-  GODOT_BASE_BRANCH: 4.2
+  GODOT_BASE_BRANCH: 4.3
   SCONSFLAGS: verbose=yes warnings=no production=yes use_lto=yes
 
 concurrency:
@@ -25,10 +25,10 @@ jobs:
             arch: arm64
           - target: template_release
             ios_simulator: yes
-            arch: x86_64
+            arch: arm64
           - target: template_debug
             ios_simulator: yes
-            arch: x86_64
+            arch: arm64
     name: Template (target=${{ matrix.target }}, ios_simulator=${{ matrix.ios_simulator }}, arch=${{ matrix.arch }})
 
     steps:
