@@ -34,8 +34,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Godot build cache
-        uses: ./.github/actions/godot-cache
+      - name: Setup Godot build cache restore
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ matrix.target }}_${{ matrix.arch }}_${{ matrix.ios_simulator }}
         continue-on-error: true
 
       - name: Setup python and scons
@@ -48,6 +50,12 @@ jobs:
           platform: ios
           target: ${{ matrix.target }}
           tests: false
+
+      - name: Setup Godot build cache restore
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ matrix.target }}_${{ matrix.arch }}_${{ matrix.ios_simulator }}
+        continue-on-error: true
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
