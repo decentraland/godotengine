@@ -22,31 +22,35 @@ jobs:
         include:
         - name: Template (target=template_release)
           target: template_release
+          cache-name: android-template-release
         - name: Template (target=template_debug)
           target: template_debug
+          cache-name: android-template-debug
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Java 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: 17
 
-    - name: Setup Godot build cache
-      uses: ./.github/actions/godot-cache
+    - name: Restore Godot build cache
+      uses: ./.github/actions/godot-cache-restore
+      with:
+        cache-name: ${{ matrix.cache-name }}
       continue-on-error: true
 
     - name: Setup python and scons
       uses: ./.github/actions/godot-deps
 
-    - name: Compilation (arm32)
-      uses: ./.github/actions/godot-build
-      with:
-        sconsflags: ${{ env.SCONSFLAGS }} arch=arm32
-        platform: android
-        target: ${{ matrix.target }}
-        tests: false
+    # - name: Compilation (arm32)
+    #   uses: ./.github/actions/godot-build
+    #   with:
+    #     sconsflags: ${{ env.SCONSFLAGS }} arch=arm32
+    #     platform: android
+    #     target: ${{ matrix.target }}
+    #     tests: false
 
     - name: Compilation (arm64)
       uses: ./.github/actions/godot-build
@@ -55,6 +59,12 @@ jobs:
         platform: android
         target: ${{ matrix.target }}
         tests: false
+
+    - name: Save Godot build cache
+      uses: ./.github/actions/godot-cache-save
+      with:
+        cache-name: ${{ matrix.cache-name }}
+      continue-on-error: true
 
     - name: Generate Godot templates
       run: |
@@ -65,3 +75,5 @@ jobs:
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
+      with:
+        name: ${{ matrix.cache-name }}

@@ -15,38 +15,32 @@ jobs:
 
   # Second stage: Run all the builds and some of the tests.
 
-  # android-build:
-  #   if: ${{ vars.DISABLE_GODOT_CI == '' }}
-  #   name: 🤖 Android
-  #   #needs: static-checks
-  #   uses: ./.github/workflows/android_builds.yml
+  android-build:
+    name: 🤖 Android
+    #needs: static-checks
+    uses: ./.github/workflows/android_builds.yml
 
   ios-build:
-    if: ${{ vars.DISABLE_GODOT_CI == '' }}
     name: 🍏 iOS
     #needs: static-checks
     uses: ./.github/workflows/ios_builds.yml
 
-  # linux-build:
-  #   if: ${{ vars.DISABLE_GODOT_CI == '' }}
-  #   name: 🐧 Linux
-  #   needs: static-checks
-  #   uses: ./.github/workflows/linux_builds.yml
+  linux-build:
+    name: 🐧 Linux
+    #needs: static-checks
+    uses: ./.github/workflows/linux_builds.yml
 
-  # macos-build:
-  #   if: ${{ vars.DISABLE_GODOT_CI == '' }}
-  #   name: 🍎 macOS
-  #   needs: static-checks
-  #   uses: ./.github/workflows/macos_builds.yml
+  macos-build:
+    name: 🍎 macOS
+    #needs: static-checks
+    uses: ./.github/workflows/macos_builds.yml
 
-  # windows-build:
-  #   if: ${{ vars.DISABLE_GODOT_CI == '' }}
-  #   name: 🏁 Windows
-  #   needs: static-checks
-  #   uses: ./.github/workflows/windows_builds.yml
+  windows-build:
+    name: 🏁 Windows
+    #needs: static-checks
+    uses: ./.github/workflows/windows_builds.yml
 
   process-templates:
-    if: ${{ vars.DISABLE_GODOT_CI == '' }}
     name: Process templates
-    needs: ios-build
+    needs: [android-build, ios-build, linux-build, macos-build, windows-build]
     uses: ./.github/workflows/process_templates.yml

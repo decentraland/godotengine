@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Download artifacts from ios-template
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
@@ -31,10 +31,15 @@ jobs:
 
       - name: Prepare iOS Files
         run: |
-          cp ./artifacts/ios-template/libgodot.ios.template_debug.arm64.a ios/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template/libgodot.ios.template_release.arm64.a ios/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template/libgodot.ios.template_debug.arm64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
-          cp ./artifacts/ios-template/libgodot.ios.template_release.arm64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          sudo apt-get update
+          sudo apt-get install -y tree
+          ls -la ./artifacts/
+          tree ./artifacts/
+
+          cp ./artifacts/ios-template-debug/libgodot.ios.template_debug.arm64.a ios/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-release/libgodot.ios.template_release.arm64.a ios/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
           cd ios
           zip -q -9 -r ../ios.zip .
           cd ..
@@ -42,22 +47,40 @@ jobs:
 
       - name: Compress selected template files
         run: |
-          mkdir compressed_templates
+          mkdir -p compressed_templates templates
+
           files_to_compress=(
             "templates/ios.zip"
-            "templates/android_debug.apk"
-            "templates/android_release.apk"
-            "templates/android_source.zip"
-            "templates/linux_debug.x86_64"
-            "templates/linux_release.x86_64"
-            "templates/macos.zip"
+            "artifacts/android-template-debug/android_debug.apk"
+            "artifacts/android-template-release/android_release.apk"
+            "artifacts/android-template-release/android_source.zip"
+            "artifacts/linux-template-debug/linux_debug.x86_64"
+            "artifacts/linux-template-release/linux_release.x86_64"
             "templates/version.txt"
-            "templates/windows_debug_x86_64.exe"
-            "templates/windows_release_x86_64.exe"
+            "artifacts/windows-template-debug/windows_debug_x86_64.exe"
+            "artifacts/windows-template-release/windows_release_x86_64.exe"
           )
-          
+
           for file in "${files_to_compress[@]}"; do
-            zip -q -9 "compressed_templates/$(basename "$file").zip" "$file"
+            target_path="templates/$(basename "$file")"
+
+            # Only move if the file is not already inside templates/
+            if [[ "$file" != "$target_path" ]]; then
+              mv "$file" "$target_path" 2>/dev/null || true
+            fi
+
+            # Compress it, keeping the "templates/" folder inside the ZIP
+            zip -q -9 -r "compressed_templates/$(basename "$file").zip" "templates/$(basename "$file")"
+          done
+
+          editor_to_compress=(
+            "artifacts/macos-editor/godot.macos.editor.universal"
+            "artifacts/linux-editor/linux_editor.x86_64"
+            "artifacts/windows-editor/windows_editor_x86_64.exe"
+          )
+
+          for file in "${editor_to_compress[@]}"; do
+            zip -q -9 -j "compressed_templates/$(basename "$file").zip" "$file" --junk-paths
           done
 
       - name: Upload templates

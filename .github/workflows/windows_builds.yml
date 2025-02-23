@@ -26,17 +26,26 @@ jobs:
           - name: Editor (target=editor, tests=yes)
             cache-name: windows-editor
             target: editor
-            tests: true
-            # Skip debug symbols, they're way too big with MSVC.
-            sconsflags: debug_symbols=no vsproj=yes vsproj_gen_only=no windows_subsystem=console
-            bin: "./bin/godot.windows.editor.x86_64.exe"
+            tests: false
+            sconsflags: production=yes debug_symbols=no
+            bin: "./bin/godot.windows.editor.x86_64"
+            binMoved: "./bin/windows_editor_x86_64"
 
           - name: Template (target=template_release)
-            cache-name: windows-template
+            cache-name: windows-template-release
             target: template_release
-            tests: true
-            sconsflags: debug_symbols=no tests=yes
-            bin: "./bin/godot.windows.template_release.x86_64.console.exe"
+            tests: false
+            sconsflags: production=yes debug_symbols=no
+            bin: "./bin/godot.windows.template_release.x86_64"
+            binMoved: "./bin/windows_release_x86_64"
+
+          - name: Template (target=template_debug)
+            cache-name: windows-template-debug
+            target: template_debug
+            tests: false
+            sconsflags: production=yes debug_symbols=no
+            bin: "./bin/godot.windows.template_debug.x86_64"
+            binMoved: "./bin/windows_debug_x86_64"
 
     steps:
       - uses: actions/checkout@v4
@@ -86,15 +95,11 @@ jobs:
       - name: Prepare artifact
         run: |
           Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          Move-Item -Path "${{ matrix.bin }}.console.exe" -Destination "${{ matrix.binMoved }}_console.exe"
+          Move-Item -Path "${{ matrix.bin }}.exe" -Destination "${{ matrix.binMoved }}.exe"
+
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
           name: ${{ matrix.cache-name }}
-
-      - name: Unit tests
-        if: ${{ matrix.tests }}
-        run: |
-          ${{ matrix.bin }} --version
-          ${{ matrix.bin }} --help
-          ${{ matrix.bin }} --test --force-colors

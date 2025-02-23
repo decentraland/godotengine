@@ -24,14 +24,22 @@ jobs:
             cache-name: macos-editor
             target: editor
             tests: true
+            sconsflags: production=yes
             bin: "./bin/godot.macos.editor.universal"
 
           - name: Template (target=template_release)
-            cache-name: macos-template
+            cache-name: macos-template-release
             target: template_release
             tests: true
-            sconsflags: debug_symbols=no tests=yes
+            sconsflags: production=yes
             bin: "./bin/godot.macos.template_release.universal"
+
+          - name: Template (target=template_release)
+            cache-name: macos-template-debug
+            target: template_debug
+            tests: true
+            sconsflags: production=yes
+            bin: "./bin/godot.macos.template_debug.universal"
 
     steps:
       - uses: actions/checkout@v4
