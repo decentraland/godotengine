@@ -4,7 +4,7 @@ on:
 
 # Global Settings
 env:
-  GODOT_BASE_BRANCH: 4.3
+  GODOT_BASE_BRANCH: 4.4
   SCONSFLAGS: verbose=yes warnings=no production=yes use_lto=yes
 
 concurrency:
@@ -37,6 +37,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Godot build cache restore
         uses: ./.github/actions/godot-cache-restore
