@@ -4,7 +4,7 @@ on:
 
 # Global Settings
 env:
-  GODOT_VERSION: 4.3
+  GODOT_VERSION: 4.4
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
