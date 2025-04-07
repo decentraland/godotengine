@@ -4,7 +4,8 @@ on:
 
 # Global Settings
 env:
-  GODOT_VERSION: 4.4
+  GODOT_VERSION: 4.4.1.stable
+  TEMPLATE_FILE_NAME: Godot_v4.4.1-stable_export_templates.tpz
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
@@ -16,76 +17,76 @@ jobs:
     name: Process Godot Templates
 
     steps:
-      - name: Download artifacts from ios-template
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-
-      - name: Download Godot Templates
-        run: |
-          curl -L -o Godot_export_templates.tpz https://github.com/godotengine/godot/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_export_templates.tpz
-          unzip Godot_export_templates.tpz
-
-      - name: Uncompress ios.zip from Godot Templates
-        run: unzip -q templates/ios.zip -d ios
-
-      - name: Prepare iOS Files
+      - name: Debug - Show tree of the artifacts
         run: |
           sudo apt-get update
           sudo apt-get install -y tree
           ls -la ./artifacts/
           tree ./artifacts/
-
-          cp ./artifacts/ios-template-debug/libgodot.ios.template_debug.arm64.a ios/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template-release/libgodot.ios.template_release.arm64.a ios/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.simulator.a ios/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
-          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.simulator.a ios/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
-          cd ios
-          zip -q -9 -r ../ios.zip .
-          cd ..
-          cp ios.zip templates/ios.zip
-
-      - name: Compress selected template files
+      - name: Prepare output folders
         run: |
-          mkdir -p compressed_templates templates
+          mkdir -p templates
+          mkdir -p editors
+          echo ${{ env.GODOT_VERSION }} > templates/version.txt
 
-          files_to_compress=(
-            "templates/ios.zip"
-            "artifacts/android-template-debug/android_debug.apk"
-            "artifacts/android-template-release/android_release.apk"
-            "artifacts/android-template-release/android_source.zip"
-            "artifacts/linux-template-debug/linux_debug.x86_64"
-            "artifacts/linux-template-release/linux_release.x86_64"
-            "templates/version.txt"
-            "artifacts/windows-template-debug/windows_debug_x86_64.exe"
-            "artifacts/windows-template-release/windows_release_x86_64.exe"
-          )
+      - name: Prepare iOS Files
+        run: |
+          cp -r misc/dist/ios_xcode ios_xcode
+          cp ./artifacts/ios-template-debug/libgodot.ios.template_debug.arm64.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-release/libgodot.ios.template_release.arm64.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.simulator.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.simulator.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cd ios_xcode
+          zip -q -9 -r templates/ios.zip .
 
-          for file in "${files_to_compress[@]}"; do
-            target_path="templates/$(basename "$file")"
+      - name: Copy Linux and Windows Editor
+        run: |
+          cp artifacts/linux-editor/linux_editor.x86_64 editors/godot.linux.editor.x86_64
+          cp artifacts/linux-editor/windows_editor_x86_64.exe editors/godot.windows.editor.x86_64.exe
 
-            # Only move if the file is not already inside templates/
-            if [[ "$file" != "$target_path" ]]; then
-              mv "$file" "$target_path" 2>/dev/null || true
-            fi
+      - name: Prepare Editor MacOS Files
+        run: |
+          cp -r misc/dist/macos_tools.app Godot.app
+          mkdir -p Godot.app/Contents/MacOS
+          cp artifacts/macos-editor/godot.macos.editor.universal Godot.app/Contents/MacOS/Godot
+          chmod +x Godot.app/Contents/MacOS/Godot
+          zip -q -9 -r "editors/godot.macos.editor.arm64.zip" Godot.app
 
-            # Compress it, keeping the "templates/" folder inside the ZIP
-            zip -q -9 -r "compressed_templates/$(basename "$file").zip" "templates/$(basename "$file")"
-          done
+      - name: Prepare Templates MacOS Files
+        run: |
+          cp -r misc/dist/macos_template.app .
+          mkdir -p macos_template.app/Contents/MacOS
+          cp artifacts/macos-template-release/godot.macos.template_release.universal macos_template.app/Contents/MacOS/godot_macos_release.universal
+          cp artifacts/macos-template-debug/godot.macos.template_debug.universal macos_template.app/Contents/MacOS/godot_macos_debug.universal
 
-          editor_to_compress=(
-            "artifacts/macos-editor/godot.macos.editor.universal"
-            "artifacts/linux-editor/linux_editor.x86_64"
-            "artifacts/windows-editor/windows_editor_x86_64.exe"
-          )
+          chmod +x macos_template.app/Contents/MacOS/godot_macos*
+          zip -q -9 -r templates/macos.zip macos_template.app
 
-          for file in "${editor_to_compress[@]}"; do
-            zip -q -9 -j "compressed_templates/$(basename "$file").zip" "$file" --junk-paths
-          done
+      - name: Copy templates
+        run: |
+          mv artifacts/android-template-debug/android_debug.apk templates/
+          mv artifacts/android-template-release/android_release.apk templates/
+          mv artifacts/android-template-release/android_source.zip templates/
+          mv artifacts/linux-template-debug/linux_debug.x86_64 templates/
+          mv artifacts/linux-template-release/linux_release.x86_64 templates/
+          mv artifacts/windows-template-debug/windows_debug_x86_64.exe templates/
+          mv artifacts/windows-template-release/windows_release_x86_64.exe templates/
+
+      - name: Compress templates
+        run: zip -q -9 -r -D "${{ env.TEMPLATE_FILE_NAME }}" templates/*
 
       - name: Upload templates
         uses: actions/upload-artifact@v4
         with:
           name: templates
           retention-days: 1
-          path: compressed_templates
+          path: |
+            ${{ env.TEMPLATE_FILE_NAME }}
+            editors/*
