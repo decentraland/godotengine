@@ -311,7 +311,8 @@ void ExportTemplateManager::_refresh_mirrors_completed(int p_status, int p_code,
 		mirrors.clear(); // remove remote mirrors
 		Dictionary protocol_squad;
 		protocol_squad.set("name", "Protocol Squad GitHub Releases");
-		protocol_squad.set("url", "https://github.com/decentraland/godotengine/releases/download/" + VERSION_NUMBER + "-" + VERSION_STATUS + "/Godot_v" + VERSION_NUMBER + "-" + VERSION_STATUS + "_export_templates.tpz");
+		String current_version = String(VERSION_NUMBER) + "-" + String(VERSION_STATUS);
+		protocol_squad.set("url", "https://github.com/decentraland/godotengine/releases/download/" + current_version + "/Godot_v" + current_version + "_export_templates.tpz");
 		mirrors.push_back(protocol_squad);
 		// Protocol squad mirror patch end
 
