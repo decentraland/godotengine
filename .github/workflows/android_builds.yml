@@ -20,12 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - name: Template (target=template_release)
-          target: template_release
-          cache-name: android-template-release
-        - name: Template (target=template_debug)
-          target: template_debug
-          cache-name: android-template-debug
+        - name: Template
+          cache-name: android-template
     steps:
     - uses: actions/checkout@v4
 
@@ -63,12 +59,20 @@ jobs:
     #     target: ${{ matrix.target }}
     #     tests: false
 
-    - name: Compilation (arm64)
+    - name: Compilation release (arm64)
       uses: ./.github/actions/godot-build
       with:
         sconsflags: ${{ env.SCONSFLAGS }} arch=arm64 swappy=yes
         platform: android
-        target: ${{ matrix.target }}
+        target: template_release
+        tests: false
+
+    - name: Compilation debug (arm64)
+      uses: ./.github/actions/godot-build
+      with:
+        sconsflags: ${{ env.SCONSFLAGS }} arch=arm64 swappy=yes
+        platform: android
+        target: template_debug
         tests: false
 
     - name: Save Godot build cache

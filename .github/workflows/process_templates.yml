@@ -71,9 +71,9 @@ jobs:
 
       - name: Copy templates
         run: |
-          mv artifacts/android-template-debug/android_debug.apk templates/
-          mv artifacts/android-template-release/android_release.apk templates/
-          mv artifacts/android-template-release/android_source.zip templates/
+          mv artifacts/android-template/android_debug.apk templates/
+          mv artifacts/android-template/android_release.apk templates/
+          mv artifacts/android-template/android_source.zip templates/
           mv artifacts/linux-template-debug/linux_debug.x86_64 templates/
           mv artifacts/linux-template-release/linux_release.x86_64 templates/
           mv artifacts/windows-template-debug/windows_debug_x86_64.exe templates/

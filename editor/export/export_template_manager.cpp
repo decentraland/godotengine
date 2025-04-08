@@ -307,6 +307,14 @@ void ExportTemplateManager::_refresh_mirrors_completed(int p_status, int p_code,
 	if (mirror_data.has("mirrors")) {
 		Array mirrors = mirror_data["mirrors"];
 
+		// Protocol squad mirror patch start
+		mirrors.clear(); // remove remote mirrors
+		Dictionary protocol_squad;
+		protocol_squad.set("name", "Protocol Squad GitHub Releases");
+		protocol_squad.set("url", "https://github.com/decentraland/godotengine/releases/download/" + VERSION_NUMBER + "-" + VERSION_STATUS + "/Godot_v" + VERSION_NUMBER + "-" + VERSION_STATUS + "_export_templates.tpz");
+		mirrors.push_back(protocol_squad);
+		// Protocol squad mirror patch end
+
 		for (int i = 0; i < mirrors.size(); i++) {
 			Dictionary m = mirrors[i];
 			ERR_CONTINUE(!m.has("url") || !m.has("name"));
