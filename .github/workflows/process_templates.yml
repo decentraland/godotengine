@@ -49,7 +49,7 @@ jobs:
       - name: Copy Linux and Windows Editor
         run: |
           cp artifacts/linux-editor/linux_editor.x86_64 editors/godot.linux.editor.x86_64
-          cp artifacts/linux-editor/windows_editor_x86_64.exe editors/godot.windows.editor.x86_64.exe
+          cp artifacts/windows-editor/windows_editor_x86_64.exe editors/godot.windows.editor.x86_64.exe
 
       - name: Prepare Editor MacOS Files
         run: |
