@@ -54,6 +54,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <data android:scheme="decentraland" />
             </intent-filter>
         </activity>
 
