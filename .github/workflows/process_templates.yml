@@ -54,7 +54,6 @@ jobs:
           cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.simulator.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
           cp -r deps/moltenvk/MoltenVK/MoltenVK.xcframework ios_xcode/
           # TODO: Add FFMPEG libs?
-          cp -r 
           cd ios_xcode
           zip -q -9 -r ../templates/ios.zip .
 
