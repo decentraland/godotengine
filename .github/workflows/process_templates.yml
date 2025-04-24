@@ -59,8 +59,8 @@ jobs:
 
       - name: Copy Linux and Windows Editor
         run: |
-          cp artifacts/linux-editor/linux_editor.x86_64 editors/godot.linux.editor.x86_64
-          cp artifacts/windows-editor/windows_editor_x86_64.exe editors/godot.windows.editor.x86_64.exe
+          cp artifacts/linux-editor/linux_editor.x86_64 editors/godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64
+          cp artifacts/windows-editor/windows_editor_x86_64.exe editors/godot.${{ env.GODOT_VERSION }}.windows.editor.x86_64.exe
 
       - name: Prepare Editor MacOS Files
         run: |
@@ -68,7 +68,7 @@ jobs:
           mkdir -p Godot.app/Contents/MacOS
           cp artifacts/macos-editor/godot.macos.editor.universal Godot.app/Contents/MacOS/Godot
           chmod +x Godot.app/Contents/MacOS/Godot
-          zip -q -9 -r "editors/godot.macos.editor.arm64.zip" Godot.app
+          zip -q -9 -r "editors/godot.${{ env.GODOT_VERSION }}.macos.editor.arm64.zip" Godot.app
 
       - name: Prepare Templates MacOS Files
         run: |
@@ -93,6 +93,19 @@ jobs:
       - name: Compress templates
         run: zip -q -9 -r -D "${{ env.TEMPLATE_FILE_NAME }}" templates/*
 
+      - name: Compress individual files
+        run: |
+          mkdir -p compressed-templates/
+          cd templates/
+          # Loop through each file in the folder
+          for file in *; do
+              # Check if it's a regular file (not a directory)
+              if [[ -f "$file" ]]; then
+                  # Create a ZIP archive for each file
+                  zip "../compressed_templates/${file}.zip" "$file"
+              fi
+          done
+
       - name: Upload templates
         uses: actions/upload-artifact@v4
         with:
@@ -101,3 +114,4 @@ jobs:
           path: |
             ${{ env.TEMPLATE_FILE_NAME }}
             editors/*
+            compressed_templates/*
