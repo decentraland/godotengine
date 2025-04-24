@@ -102,7 +102,7 @@ jobs:
               # Check if it's a regular file (not a directory)
               if [[ -f "$file" ]]; then
                   # Create a ZIP archive for each file
-                  zip "../compressed_templates/${file}.zip" "$file"
+                  zip "../compressed-templates/${file}.zip" "$file"
               fi
           done
 
@@ -114,4 +114,4 @@ jobs:
           path: |
             ${{ env.TEMPLATE_FILE_NAME }}
             editors/*
-            compressed_templates/*
+            compressed-templates/*
