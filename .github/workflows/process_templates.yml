@@ -57,10 +57,10 @@ jobs:
           cd ios_xcode
           zip -q -9 -r ../templates/ios.zip .
 
-      - name: Copy Linux and Windows Editor
-        run: |
-          cp artifacts/linux-editor/linux_editor.x86_64 editors/godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64
-          cp artifacts/windows-editor/windows_editor_x86_64.exe editors/godot.${{ env.GODOT_VERSION }}.windows.editor.x86_64.exe
+      - name: Compress Linux and Windows Editor
+        run: |          
+          zip -q -9 -r editors/godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64.zip artifacts/linux-editor/linux_editor.x86_64
+          zip -q -9 -r editors/godot.${{ env.GODOT_VERSION }}.windows.editor.x86_64.exe artifacts/windows-editor/windows_editor_x86_64.exe
 
       - name: Prepare Editor MacOS Files
         run: |
