@@ -33,23 +33,6 @@
 #include "core/io/marshalls.h"
 #include "scene/resources/bit_map.h"
 
-static const char *compression_mode_names[7] = {
-	"Lossless", "Lossy", "Basis Universal", "S3TC", "ETC2", "BPTC", "ASTC"
-};
-
-static PortableCompressedTexture2D::CompressionMode get_expected_compression_mode(Image::Format format) {
-	if ((format >= Image::FORMAT_DXT1 && format <= Image::FORMAT_RGTC_RG) || format == Image::FORMAT_DXT5_RA_AS_RG) {
-		return PortableCompressedTexture2D::COMPRESSION_MODE_S3TC;
-	} else if (format >= Image::FORMAT_ETC && format <= Image::FORMAT_ETC2_RA_AS_RG) {
-		return PortableCompressedTexture2D::COMPRESSION_MODE_ETC2;
-	} else if (format >= Image::FORMAT_BPTC_RGBA && format <= Image::FORMAT_BPTC_RGBFU) {
-		return PortableCompressedTexture2D::COMPRESSION_MODE_BPTC;
-	} else if (format >= Image::FORMAT_ASTC_4x4 && format <= Image::FORMAT_ASTC_8x8_HDR) {
-		return PortableCompressedTexture2D::COMPRESSION_MODE_ASTC;
-	}
-	ERR_FAIL_V(PortableCompressedTexture2D::COMPRESSION_MODE_LOSSLESS);
-}
-
 void PortableCompressedTexture2D::_set_data(const Vector<uint8_t> &p_data) {
 	return;
 }
