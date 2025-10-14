@@ -8,7 +8,11 @@ inputs:
   path:
     description: The path to upload.
     required: true
-    default: bin/*
+    default: "bin/*"
+  retention-days:
+    description: Retention days for the artifact
+    required: false
+    default: 14
 
 runs:
   using: composite
@@ -18,5 +22,4 @@ runs:
       with:
         name: ${{ inputs.name }}
         path: ${{ inputs.path }}
-        # Default is 90 days.
-        retention-days: 60
+        retention-days: ${{ inputs.retention-days }}
