@@ -50,8 +50,8 @@ jobs:
           cp -r misc/dist/ios_xcode ios_xcode
           cp ./artifacts/ios-template-debug/libgodot.ios.template_debug.arm64.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
           cp ./artifacts/ios-template-release/libgodot.ios.template_release.arm64.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
-          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.simulator.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
-          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.simulator.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
           cp -r deps/moltenvk/MoltenVK/MoltenVK.xcframework ios_xcode/
           # TODO: Add FFMPEG libs?
           cd ios_xcode
