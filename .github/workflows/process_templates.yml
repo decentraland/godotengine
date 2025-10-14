@@ -4,8 +4,8 @@ on:
 
 # Global Settings
 env:
-  GODOT_VERSION: 4.4.1.stable
-  TEMPLATE_FILE_NAME: Godot_v4.4.1-stable_export_templates.tpz
+  GODOT_VERSION: 4.5.stable
+  TEMPLATE_FILE_NAME: Godot_v4.5-stable_export_templates.tpz
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
