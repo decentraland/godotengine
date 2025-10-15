@@ -64,8 +64,8 @@ jobs:
           GODOT_WINDOWS_PATH=godot.${{ env.GODOT_VERSION }}.windows.editor.x86_64.exe
           mv linux-editor/linux_editor.x86_64 ${GODOT_LINUX_PATH}
           mv windows-editor/windows_editor_x86_64.exe ${GODOT_WINDOWS_PATH}
-          zip -q -9 -r ../editors/${GODOT_LINUX_PATH} ${GODOT_LINUX_PATH}
-          zip -q -9 -r ../editors/${GODOT_WINDOWS_PATH} ${GODOT_WINDOWS_PATH}
+          zip -q -9 -r ../editors/${GODOT_LINUX_PATH}.zip ${GODOT_LINUX_PATH}
+          zip -q -9 -r ../editors/${GODOT_WINDOWS_PATH}.zip ${GODOT_WINDOWS_PATH}
 
       - name: Prepare Editor MacOS Files
         run: |
