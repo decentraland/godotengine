@@ -1,0 +1,122 @@
+name: Process templates
+on:
+  workflow_call:
+
+# Global Settings
+env:
+  GODOT_VERSION: 4.5.1.stable
+  TEMPLATE_FILE_NAME: Godot_v4.5.1-stable_export_templates.tpz
+
+concurrency:
+  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
+  cancel-in-progress: true
+
+jobs:
+  process-templates:
+    runs-on: "ubuntu-22.04"
+    name: Process Godot Templates
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      - name: Debug - Show tree of the artifacts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree
+          ls -la ./artifacts/
+          tree ./artifacts/
+      - name: Prepare output folders
+        run: |
+          mkdir -p templates
+          mkdir -p editors
+          echo ${{ env.GODOT_VERSION }} > templates/version.txt
+      - name: Download MoltenVK
+        run: |
+          echo "Missing MoltenVK for macOS, downloading it."
+          mkdir -p deps/moltenvk
+          pushd deps/moltenvk
+          curl -L -o moltenvk.tar https://github.com/godotengine/moltenvk-osxcross/releases/download/vulkan-sdk-1.3.283.0-2/MoltenVK-all.tar
+          tar xf moltenvk.tar && rm -f moltenvk.tar
+          mv MoltenVK/MoltenVK/include/ MoltenVK/
+          mv MoltenVK/MoltenVK/static/MoltenVK.xcframework/ MoltenVK/
+          popd
+      - name: Prepare iOS Files
+        run: |
+          cp -r misc/dist/ios_xcode ios_xcode
+          cp ./artifacts/ios-template-debug/libgodot.ios.template_debug.arm64.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-release/libgodot.ios.template_release.arm64.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64/libgodot.a
+          cp ./artifacts/ios-template-debug-simulator/libgodot.ios.template_debug.arm64.a ios_xcode/libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp ./artifacts/ios-template-release-simulator/libgodot.ios.template_release.arm64.a ios_xcode/libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+          cp -r deps/moltenvk/MoltenVK/MoltenVK.xcframework ios_xcode/
+          # TODO: Add FFMPEG libs?
+          cd ios_xcode
+          zip -q -9 -r ../templates/ios.zip .
+
+      - name: Copy and compress Linux and Windows Editor
+        run: |
+          cd artifacts/
+          GODOT_LINUX_PATH=godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64
+          GODOT_WINDOWS_PATH=godot.${{ env.GODOT_VERSION }}.windows.editor.x86_64.exe
+          mv linux-editor/linux_editor.x86_64 ${GODOT_LINUX_PATH}
+          mv windows-editor/windows_editor_x86_64.exe ${GODOT_WINDOWS_PATH}
+          zip -q -9 -r ../editors/${GODOT_LINUX_PATH}.zip ${GODOT_LINUX_PATH}
+          zip -q -9 -r ../editors/${GODOT_WINDOWS_PATH}.zip ${GODOT_WINDOWS_PATH}
+
+      - name: Prepare Editor MacOS Files
+        run: |
+          cp -r misc/dist/macos_tools.app Godot.app
+          mkdir -p Godot.app/Contents/MacOS
+          cp artifacts/macos-editor/godot.macos.editor.universal Godot.app/Contents/MacOS/Godot
+          chmod +x Godot.app/Contents/MacOS/Godot
+          zip -q -9 -r "editors/godot.${{ env.GODOT_VERSION }}.macos.editor.arm64.zip" Godot.app
+
+      - name: Prepare Templates MacOS Files
+        run: |
+          cp -r misc/dist/macos_template.app .
+          mkdir -p macos_template.app/Contents/MacOS
+          cp artifacts/macos-template-release/godot.macos.template_release.universal macos_template.app/Contents/MacOS/godot_macos_release.universal
+          cp artifacts/macos-template-debug/godot.macos.template_debug.universal macos_template.app/Contents/MacOS/godot_macos_debug.universal
+
+          chmod +x macos_template.app/Contents/MacOS/godot_macos*
+          zip -q -9 -r templates/macos.zip macos_template.app
+
+      - name: Copy templates
+        run: |
+          mv artifacts/android-template/android_debug.apk templates/
+          mv artifacts/android-template/android_release.apk templates/
+          mv artifacts/android-template/android_source.zip templates/
+          mv artifacts/linux-template-debug/linux_debug.x86_64 templates/
+          mv artifacts/linux-template-release/linux_release.x86_64 templates/
+          mv artifacts/windows-template-debug/windows_debug_x86_64.exe templates/
+          mv artifacts/windows-template-release/windows_release_x86_64.exe templates/
+
+      - name: Compress templates
+        run: zip -q -9 -r -D "${{ env.TEMPLATE_FILE_NAME }}" templates/*
+
+      - name: Compress individual files
+        run: |
+          mkdir -p compressed-templates/
+          cd templates/
+          # Loop through each file in the folder
+          for file in *; do
+              # Check if it's a regular file (not a directory)
+              if [[ -f "$file" ]]; then
+                  # Create a ZIP archive for each file
+                  zip "../compressed-templates/${file}.zip" "$file"
+              fi
+          done
+
+      - name: Upload templates
+        uses: actions/upload-artifact@v4
+        with:
+          name: templates
+          retention-days: 1
+          path: |
+            ${{ env.TEMPLATE_FILE_NAME }}
+            editors/*
+            compressed-templates/*
