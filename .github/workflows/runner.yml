@@ -2,45 +2,45 @@ name: 🔗 GHA
 on: [push, pull_request, merge_group]
 
 concurrency:
-  group: ${{ github.workflow }}|${{ github.ref_name }}
+  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-runner
   cancel-in-progress: true
 
 jobs:
   # First stage: Only static checks, fast and prevent expensive builds from running.
 
-  static-checks:
-    if: ${{ !vars.DISABLE_GODOT_CI || github.run_attempt > 1 }}
-    name: 📊 Static checks
-    uses: ./.github/workflows/static_checks.yml
+  # static-checks:
+  #   if: ${{ vars.DISABLE_GODOT_CI == '' }}
+  #   name: 📊 Static checks
+  #   uses: ./.github/workflows/static_checks.yml
 
   # Second stage: Run all the builds and some of the tests.
 
   android-build:
     name: 🤖 Android
-    needs: static-checks
+    #needs: static-checks
     uses: ./.github/workflows/android_builds.yml
 
   ios-build:
     name: 🍏 iOS
-    needs: static-checks
+    #needs: static-checks
     uses: ./.github/workflows/ios_builds.yml
 
   linux-build:
     name: 🐧 Linux
-    needs: static-checks
+    #needs: static-checks
     uses: ./.github/workflows/linux_builds.yml
 
   macos-build:
     name: 🍎 macOS
-    needs: static-checks
+    #needs: static-checks
     uses: ./.github/workflows/macos_builds.yml
 
   windows-build:
     name: 🏁 Windows
-    needs: static-checks
+    #needs: static-checks
     uses: ./.github/workflows/windows_builds.yml
 
-  web-build:
-    name: 🌐 Web
-    needs: static-checks
-    uses: ./.github/workflows/web_builds.yml
+  process-templates:
+    name: Process templates
+    needs: [android-build, ios-build, linux-build, macos-build, windows-build]
+    uses: ./.github/workflows/process_templates.yml

@@ -4,41 +4,73 @@ on:
 
 # Global Settings
 env:
-  SCONS_FLAGS: >-
-    dev_mode=yes
-    module_text_server_fb_enabled=yes
-    tests=no
-    debug_symbols=no
+ # TODO: SCONS_FLAGS from 4.5 diff
+  # SCONS_FLAGS: >-
+  #   dev_mode=yes
+  #   module_text_server_fb_enabled=yes
+  #   tests=no
+  #   debug_symbols=no
+  GODOT_BASE_BRANCH: 4.4
+  SCONSFLAGS: verbose=yes warnings=no production=yes use_lto=yes
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-ios
+  cancel-in-progress: true
 
 jobs:
   ios-template:
-    runs-on: macos-latest
-    name: Template (target=template_release)
-    timeout-minutes: 60
+    runs-on: "macos-latest"
+    strategy:
+      matrix:
+        include:
+          - target: template_release
+            ios_simulator: no
+            arch: arm64
+            cache-name: ios-template-release
+          - target: template_debug
+            ios_simulator: no
+            arch: arm64
+            cache-name: ios-template-debug
+          - target: template_release
+            ios_simulator: yes
+            arch: arm64
+            cache-name: ios-template-release-simulator
+          - target: template_debug
+            ios_simulator: yes
+            arch: arm64
+            cache-name: ios-template-debug-simulator
+    name: Template (target=${{ matrix.target }}, ios_simulator=${{ matrix.ios_simulator }}, arch=${{ matrix.arch }})
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Restore Godot build cache
+      - name: Setup Godot build cache restore
         uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      - name: Setup Python and SCons
+      - name: Setup python and scons
         uses: ./.github/actions/godot-deps
 
-      - name: Compilation (arm64)
+      - name: Compilation (${{matrix.arch}})
         uses: ./.github/actions/godot-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }}
+          sconsflags: ${{ env.SCONSFLAGS }} ios_simulator=${{ matrix.ios_simulator }} arch=${{ matrix.arch }}
           platform: ios
-          target: template_release
+          target: ${{ matrix.target }}
+          tests: false
 
-      - name: Save Godot build cache
+      - name: Setup Godot build cache restore
         uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.cache-name }}
+          retention-days: 1
