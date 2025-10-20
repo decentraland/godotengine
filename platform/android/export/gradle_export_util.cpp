@@ -305,6 +305,13 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 
 	manifest_activity_text += "            </intent-filter>\n";
 
+	manifest_activity_text += "            <intent-filter>\n"
+							"                <action android:name=\"android.intent.action.VIEW\" />\n"
+							"                <category android:name=\"android.intent.category.DEFAULT\" />\n";
+							"                <category android:name=\"android.intent.category.BROWSABLE\" />\n";
+							"                <data android:scheme=\"decentraland\" />\n";
+	manifest_activity_text += "            </intent-filter>\n";
+
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
 		if (export_plugins[i]->supports_platform(p_export_platform)) {
