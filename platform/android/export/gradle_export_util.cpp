@@ -348,6 +348,14 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 
 	manifest_activity_text += "            </intent-filter>\n";
 
+	// Decentraland deep link intent filter.
+	manifest_activity_text += "            <intent-filter>\n"
+							  "                <action android:name=\"android.intent.action.VIEW\" />\n"
+							  "                <category android:name=\"android.intent.category.DEFAULT\" />\n"
+							  "                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
+							  "                <data android:scheme=\"decentraland\" />\n"
+							  "            </intent-filter>\n";
+
 	// Hybrid categories should only go to the actual 'GodotApp' activity.
 	Ref<RegEx> activity_alias_content_to_remove_regex = RegEx::create_from_string(R"delim(<category\s+android:name\s*=\s*"org.godotengine.xr.hybrid.(IMMERSIVE|PANEL)"\s*\/>)delim");
 	String updated_export_plugins_activity_alias_element_contents = activity_alias_content_to_remove_regex->sub(export_plugins_activity_element_contents, "", true);
