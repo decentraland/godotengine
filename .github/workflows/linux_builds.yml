@@ -1,17 +1,26 @@
 name: 🐧 Linux Builds
 on:
   workflow_call:
-  workflow_dispatch:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
 
 # Global Settings
 env:
-  SCONS_FLAGS: >-
-    dev_mode=yes
-    module_text_server_fb_enabled=yes
-    "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.18.0/"
-  GODOT_CPP_BRANCH: 4.5
+ # TODO: SCONS_FLAGS from 4.5 diff
+  # SCONS_FLAGS: >-
+  #   dev_mode=yes
+  #   module_text_server_fb_enabled=yes
+  #   "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.17.0/"
+  GODOT_CPP_BRANCH: 4.4
   # Used for the cache key. Add version suffix to force clean build.
-  GODOT_BASE_BRANCH: 4.5
+  GODOT_BASE_BRANCH: 4.4
   SCONSFLAGS: verbose=yes warnings=extra werror=yes module_text_server_fb_enabled=yes strict_checks=yes
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -104,12 +113,12 @@ jobs:
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
           repo: AccessKit/accesskit-c
-          version: tags/0.18.0
-          file: accesskit-c-0.18.0.zip
-          target: accesskit-c-0.18.0/accesskit_c.zip
+          version: tags/0.17.0
+          file: accesskit-c-0.17.0.zip
+          target: accesskit-c-0.17.0/accesskit_c.zip
 
       - name: Extract pre-built AccessKit
-        run: unzip -o accesskit-c-0.18.0/accesskit_c.zip
+        run: unzip -o accesskit-c-0.17.0/accesskit_c.zip
 
       - name: Install mold linker
         if: matrix.proj-test
@@ -136,7 +145,12 @@ jobs:
           ls -la
           mv ${{ matrix.bin }} ${{ matrix.binMoved }}
 
-      - name: Upload artifact
-        uses: ./.github/actions/upload-artifact
+      - name: Upload artifact to R2
+        uses: ./.github/actions/upload-r2
         with:
           name: ${{ matrix.cache-name }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          run-id: ${{ github.run_id }}

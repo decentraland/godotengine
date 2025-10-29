@@ -1,7 +1,15 @@
 name: 🍏 iOS Builds
 on:
   workflow_call:
-  workflow_dispatch:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
 
 # Global Settings
 env:
@@ -20,8 +28,7 @@ concurrency:
 
 jobs:
   ios-template:
-    # From https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job#choosing-github-hosted-runners
-    runs-on: macos-latest
+    runs-on: "macos-latest"
     strategy:
       matrix:
         include:
@@ -42,16 +49,11 @@ jobs:
             arch: arm64
             cache-name: ios-template-debug-simulator
     name: Template (target=${{ matrix.target }}, ios_simulator=${{ matrix.ios_simulator }}, arch=${{ matrix.arch }})
-    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      # From https://github.com/actions/runner-images/blob/main/images/macos
-      - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Setup Godot build cache restore
         uses: ./.github/actions/godot-cache-restore
@@ -76,8 +78,12 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      - name: Upload artifact
-        uses: ./.github/actions/upload-artifact
+      - name: Upload artifact to R2
+        uses: ./.github/actions/upload-r2
         with:
           name: ${{ matrix.cache-name }}
-          retention-days: 1
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          run-id: ${{ github.run_id }}

@@ -1,7 +1,15 @@
 name: 🤖 Android Builds
 on:
   workflow_call:
-  workflow_dispatch:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
 
 # Global Settings
 env:
@@ -48,8 +56,16 @@ jobs:
     - name: Setup python and scons
       uses: ./.github/actions/godot-deps
 
-    - name: Download Swappy
-      run: python ./misc/scripts/install_swappy_android.py
+    - name: Download pre-built Android Swappy Frame Pacing Library
+      uses: dsaltares/fetch-gh-release-asset@1.1.2
+      with:
+        repo: godotengine/godot-swappy
+        version: tags/from-source-2025-01-31
+        file: godot-swappy.7z
+        target: swappy/godot-swappy.7z
+
+    - name: Extract pre-built Android Swappy Frame Pacing Library
+      run: 7za x -y swappy/godot-swappy.7z -o${{github.workspace}}/thirdparty/swappy-frame-pacing
 
     # - name: Compilation (arm32)
     #   uses: ./.github/actions/godot-build
@@ -88,7 +104,12 @@ jobs:
         cd ../../..
         ls -l bin/
 
-    - name: Upload artifact
-      uses: ./.github/actions/upload-artifact
+    - name: Upload artifact to R2
+      uses: ./.github/actions/upload-r2
       with:
         name: ${{ matrix.cache-name }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run-id: ${{ github.run_id }}
