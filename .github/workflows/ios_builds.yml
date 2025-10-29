@@ -1,6 +1,15 @@
 name: 🍏 iOS Builds
 on:
   workflow_call:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
 
 # Global Settings
 env:
@@ -69,8 +78,12 @@ jobs:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
-      - name: Upload artifact
-        uses: ./.github/actions/upload-artifact
+      - name: Upload artifact to R2
+        uses: ./.github/actions/upload-r2
         with:
           name: ${{ matrix.cache-name }}
-          retention-days: 1
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          run-id: ${{ github.run_id }}

@@ -1,6 +1,16 @@
 name: Process templates
 on:
   workflow_call:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
+
 
 # Global Settings
 env:
@@ -13,17 +23,45 @@ concurrency:
 
 jobs:
   process-templates:
-    runs-on: "ubuntu-22.04"
+    runs-on: "warp-ubuntu-2204-x64-2x"
     name: Process Godot Templates
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
+          
+
+      - name: Configure AWS CLI for R2
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set region auto
+
+      - name: Download artifacts from R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          ARTIFACTS_DIR="./artifacts"
+          RUN_ID="${{ github.run_id }}"
+
+          echo "Downloading artifacts from R2 for run ${RUN_ID}..."
+          mkdir -p "${ARTIFACTS_DIR}"
+
+          # Download all artifacts for this run from R2
+          aws s3 sync "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" "${ARTIFACTS_DIR}/" \
+            --endpoint-url "${R2_ENDPOINT}"
+
+          echo "✓ All artifacts downloaded successfully from R2!"
+          echo "Artifacts location: ${ARTIFACTS_DIR}/"
+
+      # - name: Download artifacts from current run
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     path: ./artifacts
+      
+        
       - name: Debug - Show tree of the artifacts
         run: |
           sudo apt-get update
@@ -111,12 +149,27 @@ jobs:
               fi
           done
 
-      - name: Upload templates
-        uses: actions/upload-artifact@v4
-        with:
-          name: templates
-          retention-days: 1
-          path: |
-            ${{ env.TEMPLATE_FILE_NAME }}
-            editors/*
-            compressed-templates/*
+
+      - name: Upload main template to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 cp "${{ env.TEMPLATE_FILE_NAME }}" "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/${{ env.TEMPLATE_FILE_NAME }}" --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Uploaded main template: ${{ env.TEMPLATE_FILE_NAME }}"
+
+      - name: Upload editors to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 cp editors/ "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/editors/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Uploaded editors to: ${{ env.GODOT_VERSION }}/editors/"
+
+      - name: Upload compressed templates to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Uploaded compressed templates to: ${{ env.GODOT_VERSION }}/compressed-templates/"

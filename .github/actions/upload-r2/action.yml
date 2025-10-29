@@ -1,0 +1,89 @@
+name: Upload artifact to R2
+description: Upload build artifacts to Cloudflare R2 storage.
+
+inputs:
+  name:
+    description: The artifact name (will be used as the folder name in R2).
+    required: true
+  path:
+    description: The path to upload.
+    required: true
+    default: "bin/*"
+  R2_ACCESS_KEY_ID:
+    description: R2 access key ID
+    required: true
+  R2_SECRET_ACCESS_KEY:
+    description: R2 secret access key
+    required: true
+  R2_ENDPOINT:
+    description: R2 endpoint URL
+    required: true
+  R2_BUCKET:
+    description: R2 bucket name
+    required: true
+  run-id:
+    description: GitHub run ID for organizing artifacts
+    required: true
+    default: ${{ github.run_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS CLI for R2
+      shell: bash
+      run: |
+        aws configure set aws_access_key_id ${{ inputs.R2_ACCESS_KEY_ID }}
+        aws configure set aws_secret_access_key ${{ inputs.R2_SECRET_ACCESS_KEY }}
+        aws configure set region auto
+
+    - name: Upload to R2
+      shell: bash
+      env:
+        R2_ENDPOINT: ${{ inputs.R2_ENDPOINT }}
+        R2_BUCKET: ${{ inputs.R2_BUCKET }}
+      run: |
+        # Create the R2 path: artifacts/{run-id}/{artifact-name}/
+        R2_PATH="artifacts/${{ inputs.run-id }}/${{ inputs.name }}/"
+        UPLOAD_PATH="${{ inputs.path }}"
+
+        echo "Preparing to upload from: ${UPLOAD_PATH}"
+
+        # List files that will be uploaded
+        echo "Files to upload:"
+        if [[ "${UPLOAD_PATH}" == *"*"* ]]; then
+          # Path contains wildcard - list matching files
+          ls -lh ${UPLOAD_PATH} 2>/dev/null || echo "No files found matching pattern"
+        else
+          # No wildcard - list directory or file
+          ls -lh "${UPLOAD_PATH}" 2>/dev/null || echo "Path not found"
+        fi
+
+        echo ""
+        echo "Uploading to s3://${R2_BUCKET}/${R2_PATH}"
+
+        # Determine upload strategy based on path
+        if [[ "${UPLOAD_PATH}" == *"*"* ]]; then
+          # Path contains wildcard - upload each matching file individually
+          for file in ${UPLOAD_PATH}; do
+            if [[ -f "$file" ]]; then
+              echo "Uploading: $file"
+              aws s3 cp "$file" "s3://${R2_BUCKET}/${R2_PATH}$(basename $file)" \
+                --endpoint-url "${R2_ENDPOINT}"
+            fi
+          done
+        elif [[ -d "${UPLOAD_PATH}" ]]; then
+          # Path is a directory - use sync
+          aws s3 sync "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}" \
+            --endpoint-url "${R2_ENDPOINT}"
+        elif [[ -f "${UPLOAD_PATH}" ]]; then
+          # Path is a single file
+          aws s3 cp "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}$(basename ${UPLOAD_PATH})" \
+            --endpoint-url "${R2_ENDPOINT}"
+        else
+          echo "Error: Path '${UPLOAD_PATH}' not found or invalid"
+          exit 1
+        fi
+
+        echo ""
+        echo "✓ Successfully uploaded ${{ inputs.name }} to R2"
+        echo "Location: s3://${R2_BUCKET}/${R2_PATH}"
