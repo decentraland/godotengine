@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   android-template:
-    runs-on: ubuntu-24.04
+    runs-on: "warp-ubuntu-2204-x64-2x"
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
