@@ -127,6 +127,8 @@ jobs:
         run: |
           mv artifacts/android-template/android_debug.apk templates/
           mv artifacts/android-template/android_release.apk templates/
+          mv artifacts/android-template/android-template-debug-native-symbols.zip templates/
+          mv artifacts/android-template/android-template-release-native-symbols.zip templates/
           mv artifacts/android-template/android_source.zip templates/
           mv artifacts/linux-template-debug/linux_debug.x86_64 templates/
           mv artifacts/linux-template-release/linux_release.x86_64 templates/
