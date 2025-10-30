@@ -97,6 +97,9 @@ jobs:
         cache-name: ${{ matrix.cache-name }}
       continue-on-error: true
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      
     - name: Generate Godot templates
       run: |
         cd platform/android/java
