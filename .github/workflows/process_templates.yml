@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   process-templates:
-    runs-on: "warp-ubuntu-2204-x64-2x"
+    runs-on: "warp-ubuntu-2404-x64-2x"
     name: Process Godot Templates
 
     steps:
