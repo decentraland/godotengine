@@ -90,7 +90,7 @@ android {
             editorBuildSuffix: ""
         ]
 
-        ndk { debugSymbolLevel 'NONE' }
+        ndk { debugSymbolLevel 'FULL' }
     }
 
     base {

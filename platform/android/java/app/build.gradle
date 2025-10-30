@@ -101,7 +101,7 @@ android {
         }
 
         ndk {
-            debugSymbolLevel 'NONE'
+            debugSymbolLevel 'FULL'
             String[] export_abi_list = getExportEnabledABIs()
             abiFilters export_abi_list
         }
