@@ -38,12 +38,13 @@
 	<array>
 		$required_device_capabilities
 	</array>
-	<key>NSCameraUsageDescription</key>
+	<!-- FIXME: see why this is by default instead of writing on demand -->
+	<!-- <key>NSCameraUsageDescription</key>
 	<string>$camera_usage_description</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>$photolibrary_usage_description</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>$microphone_usage_description</string>
+	<string>$microphone_usage_description</string> -->
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UIStatusBarHidden</key>
