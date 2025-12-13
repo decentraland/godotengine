@@ -1207,6 +1207,60 @@ RID RenderingDevice::texture_create_from_extension(TextureType p_type, DataForma
 	return id;
 }
 
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+RID RenderingDevice::texture_create_from_android_hardware_buffer(uint64_t p_hardware_buffer, uint32_t p_width, uint32_t p_height) {
+	// This method creates a texture from an Android hardware buffer (AHardwareBuffer*).
+	// Used for zero-copy video texture sharing from ExoPlayer.
+
+	ERR_FAIL_COND_V(p_hardware_buffer == 0, RID());
+
+	Texture texture;
+	texture.type = TEXTURE_TYPE_2D;
+	// Video frames typically use external format, but we expose as RGBA for shader sampling.
+	texture.format = DATA_FORMAT_R8G8B8A8_UNORM;
+	texture.samples = TEXTURE_SAMPLES_1;
+	texture.width = p_width;
+	texture.height = p_height;
+	texture.depth = 1;
+	texture.layers = 1;
+	texture.mipmaps = 1;
+	texture.usage_flags = TEXTURE_USAGE_SAMPLING_BIT;
+	texture.base_mipmap = 0;
+	texture.base_layer = 0;
+	texture.allowed_shared_formats.push_back(DATA_FORMAT_R8G8B8A8_UNORM);
+	texture.allowed_shared_formats.push_back(DATA_FORMAT_R8G8B8A8_SRGB);
+
+	texture.read_aspect_flags.set_flag(RDD::TEXTURE_ASPECT_COLOR_BIT);
+	texture.barrier_aspect_flags.set_flag(RDD::TEXTURE_ASPECT_COLOR_BIT);
+
+	texture.driver_id = driver->texture_create_from_android_hardware_buffer(
+			reinterpret_cast<void *>(p_hardware_buffer), p_width, p_height);
+	ERR_FAIL_COND_V(!texture.driver_id, RID());
+
+	_texture_make_mutable(&texture, RID());
+
+	RID id = texture_owner.make_rid(texture);
+#ifdef DEV_ENABLED
+	set_resource_name(id, "RID:" + itos(id.get_id()));
+#endif
+
+	return id;
+}
+
+bool RenderingDevice::texture_ycbcr_blit(RID p_src_texture, RID p_dst_texture, uint32_t p_width, uint32_t p_height) {
+	_THREAD_SAFE_METHOD_
+
+	Texture *src_texture = texture_owner.get_or_null(p_src_texture);
+	ERR_FAIL_NULL_V(src_texture, false);
+
+	Texture *dst_texture = texture_owner.get_or_null(p_dst_texture);
+	ERR_FAIL_NULL_V(dst_texture, false);
+
+	// Call the driver to perform the YCbCr blit with immutable sampler pipeline.
+	return driver->texture_ycbcr_blit(src_texture->driver_id, dst_texture->driver_id, p_width, p_height);
+}
+#endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+
 RID RenderingDevice::texture_create_shared_from_slice(const TextureView &p_view, RID p_with_texture, uint32_t p_layer, uint32_t p_mipmap, uint32_t p_mipmaps, TextureSliceType p_slice_type, uint32_t p_layers) {
 	Texture *src_texture = texture_owner.get_or_null(p_with_texture);
 	ERR_FAIL_NULL_V(src_texture, RID());

@@ -218,17 +218,70 @@ public:
 			VmaAllocation handle = nullptr;
 			VmaAllocationInfo info = {};
 		} allocation; // All 0/null if just a view.
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+		// For AHardwareBuffer textures with YCbCr format.
+		// These are now references to cached objects in ycbcr_format_cache.
+		VkSamplerYcbcrConversion ycbcr_conversion = VK_NULL_HANDLE;
+		VkSampler ycbcr_sampler = VK_NULL_HANDLE;
+		VkDeviceMemory external_memory = VK_NULL_HANDLE;
+		// External format key for cache lookup/release (0 if not using cached format).
+		uint64_t ycbcr_external_format = 0;
+#endif
 #ifdef DEBUG_ENABLED
 		bool created_from_extension = false;
 		bool transient = false;
 #endif
 	};
 
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// YCbCr blit infrastructure for converting YCbCr textures to RGBA.
+	// Each unique YCbCr sampler requires its own pipeline with immutable sampler.
+	// Uses double-buffering with fences for async GPU operation.
+	static const int YCBCR_BLIT_FRAME_COUNT = 2;
+	struct YcbcrBlitPipeline {
+		VkShaderModule shader_module = VK_NULL_HANDLE;
+		VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+		VkCommandPool command_pool = VK_NULL_HANDLE;
+		// Double-buffered resources for async operation.
+		VkCommandBuffer command_buffers[YCBCR_BLIT_FRAME_COUNT] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+		VkDescriptorSet descriptor_sets[YCBCR_BLIT_FRAME_COUNT] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+		VkFence fences[YCBCR_BLIT_FRAME_COUNT] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+		int current_frame = 0;
+	};
+
+	// Cache YCbCr conversion, sampler, and pipeline by external format.
+	// Video frames from the same source have the same format, so we can reuse
+	// the expensive conversion/sampler/pipeline objects across frames.
+	struct YcbcrFormatCache {
+		VkSamplerYcbcrConversion ycbcr_conversion = VK_NULL_HANDLE;
+		VkSampler ycbcr_sampler = VK_NULL_HANDLE;
+		YcbcrBlitPipeline pipeline;
+		uint32_t ref_count = 0;
+	};
+	// Cache by external format (uint64_t from VkAndroidHardwareBufferFormatPropertiesANDROID).
+	HashMap<uint64_t, YcbcrFormatCache> ycbcr_format_cache;
+	void _ycbcr_format_cache_release(uint64_t p_external_format);
+	YcbcrFormatCache *_ycbcr_format_cache_get_or_create(uint64_t p_external_format, const VkAndroidHardwareBufferFormatPropertiesANDROID &p_format_properties);
+
+	uint32_t ycbcr_blit_queue_family_index = UINT32_MAX;
+	void _ycbcr_blit_pipeline_free(YcbcrBlitPipeline &p_pipeline);
+	bool _ycbcr_blit_pipeline_create(VkSampler p_ycbcr_sampler, YcbcrBlitPipeline &r_pipeline);
+#endif
+
 	VkSampleCountFlagBits _ensure_supported_sample_count(TextureSamples p_requested_sample_count);
 
 public:
 	virtual TextureID texture_create(const TextureFormat &p_format, const TextureView &p_view) override final;
 	virtual TextureID texture_create_from_extension(uint64_t p_native_texture, TextureType p_type, DataFormat p_format, uint32_t p_array_layers, bool p_depth_stencil, uint32_t p_mipmaps) override final;
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	virtual TextureID texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) override final;
+	virtual bool texture_update_from_android_hardware_buffer(TextureID p_texture, void *p_hardware_buffer) override final;
+	virtual bool texture_has_ycbcr_sampler(TextureID p_texture) override final;
+	virtual bool texture_ycbcr_blit(TextureID p_src_texture, TextureID p_dst_texture, uint32_t p_width, uint32_t p_height) override final;
+#endif
 	virtual TextureID texture_create_shared(TextureID p_original_texture, const TextureView &p_view) override final;
 	virtual TextureID texture_create_shared_from_slice(TextureID p_original_texture, const TextureView &p_view, TextureSliceType p_slice_type, uint32_t p_layer, uint32_t p_layers, uint32_t p_mipmap, uint32_t p_mipmaps) override final;
 	virtual void texture_free(TextureID p_texture) override final;
