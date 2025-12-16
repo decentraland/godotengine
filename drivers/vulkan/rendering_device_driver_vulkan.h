@@ -278,7 +278,6 @@ public:
 	virtual TextureID texture_create_from_extension(uint64_t p_native_texture, TextureType p_type, DataFormat p_format, uint32_t p_array_layers, bool p_depth_stencil, uint32_t p_mipmaps) override final;
 #ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 	virtual TextureID texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) override final;
-	virtual bool texture_update_from_android_hardware_buffer(TextureID p_texture, void *p_hardware_buffer) override final;
 	virtual bool texture_has_ycbcr_sampler(TextureID p_texture) override final;
 	virtual bool texture_ycbcr_blit(TextureID p_src_texture, TextureID p_dst_texture, uint32_t p_width, uint32_t p_height) override final;
 #endif

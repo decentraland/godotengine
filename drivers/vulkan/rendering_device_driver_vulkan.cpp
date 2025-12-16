@@ -45,7 +45,13 @@
 #ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 #include "modules/glslang/shader_compile.h"
 #include <android/log.h>
+
+#ifdef DEBUG_ENABLED
 #define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "GodotVulkan", __VA_ARGS__)
+#else
+#define ALGOD(...)
+#endif
+
 #endif
 
 #if defined(SWAPPY_FRAME_PACING_ENABLED)
@@ -2293,11 +2299,6 @@ RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_android_hardware
 	return TextureID(tex_info);
 }
 
-bool RenderingDeviceDriverVulkan::texture_update_from_android_hardware_buffer(TextureID p_texture, void *p_hardware_buffer) {
-	// For now, we don't support updating - caller should create a new texture.
-	// A full implementation would need to track the VkDeviceMemory separately and handle cleanup.
-	ERR_FAIL_V_MSG(false, "texture_update_from_android_hardware_buffer not yet implemented. Create a new texture instead.");
-}
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 
 RDD::TextureID RenderingDeviceDriverVulkan::texture_create_shared(TextureID p_original_texture, const TextureView &p_view) {

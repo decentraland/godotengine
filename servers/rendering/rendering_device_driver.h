@@ -265,8 +265,6 @@ public:
 	// Create a texture from an Android hardware buffer (AHardwareBuffer*).
 	// Returns TextureID() on failure or if not supported.
 	virtual TextureID texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) { return TextureID(); }
-	// Update an existing external texture with a new Android hardware buffer.
-	virtual bool texture_update_from_android_hardware_buffer(TextureID p_texture, void *p_hardware_buffer) { return false; }
 	// Check if a texture has a YCbCr sampler (for external textures with YUV format).
 	virtual bool texture_has_ycbcr_sampler(TextureID p_texture) { return false; }
 	// Perform a YCbCr-to-RGBA blit from p_src_texture to p_dst_texture.
