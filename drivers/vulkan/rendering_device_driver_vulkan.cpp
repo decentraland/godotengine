@@ -49,7 +49,7 @@
 #ifdef DEBUG_ENABLED
 #define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "GodotVulkan", __VA_ARGS__)
 #else
-#define ALGOD(...)
+#define ALOGD(...)
 #endif
 
 #endif
@@ -2090,7 +2090,7 @@ RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_extension(uint64
 
 RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) {
 	// Version tag for debugging - change this when updating the code.
-	ALOGD("AHardwareBuffer texture_create v4 - with uniform path diagnostics");
+	// ALOGD("AHardwareBuffer texture_create v4 - with uniform path diagnostics");
 
 	ERR_FAIL_NULL_V(p_hardware_buffer, TextureID());
 
@@ -2239,16 +2239,16 @@ RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_android_hardware
 	// For YCbCr formats (external formats), use cached conversion/sampler/pipeline.
 	if (use_external_format) {
 		// Log the YCbCr properties for debugging.
-		ALOGD("AHardwareBuffer YCbCr: model=%d range=%d suggested_components=(%d,%d,%d,%d) chroma=(%d,%d) format=0x%llx",
-				(int)format_properties.suggestedYcbcrModel,
-				(int)format_properties.suggestedYcbcrRange,
-				(int)format_properties.samplerYcbcrConversionComponents.r,
-				(int)format_properties.samplerYcbcrConversionComponents.g,
-				(int)format_properties.samplerYcbcrConversionComponents.b,
-				(int)format_properties.samplerYcbcrConversionComponents.a,
-				(int)format_properties.suggestedXChromaOffset,
-				(int)format_properties.suggestedYChromaOffset,
-				(unsigned long long)format_properties.externalFormat);
+		// ALOGD("AHardwareBuffer YCbCr: model=%d range=%d suggested_components=(%d,%d,%d,%d) chroma=(%d,%d) format=0x%llx",
+		// 		(int)format_properties.suggestedYcbcrModel,
+		// 		(int)format_properties.suggestedYcbcrRange,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.r,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.g,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.b,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.a,
+		// 		(int)format_properties.suggestedXChromaOffset,
+		// 		(int)format_properties.suggestedYChromaOffset,
+		// 		(unsigned long long)format_properties.externalFormat);
 
 		// Get or create cached conversion/sampler/pipeline for this format.
 		YcbcrFormatCache *format_cache = _ycbcr_format_cache_get_or_create(format_properties.externalFormat, format_properties);
@@ -2518,8 +2518,8 @@ RenderingDeviceDriverVulkan::YcbcrFormatCache *RenderingDeviceDriverVulkan::_ycb
 	HashMap<uint64_t, YcbcrFormatCache>::Iterator it = ycbcr_format_cache.find(p_external_format);
 	if (it != ycbcr_format_cache.end()) {
 		it->value.ref_count++;
-		ALOGD("YcbcrFormatCache: Reusing cached conversion/sampler/pipeline for format 0x%llx (ref_count=%d)",
-				(unsigned long long)p_external_format, it->value.ref_count);
+		// ALOGD("YcbcrFormatCache: Reusing cached conversion/sampler/pipeline for format 0x%llx (ref_count=%d)",
+		// 		(unsigned long long)p_external_format, it->value.ref_count);
 		return &it->value;
 	}
 
@@ -2594,8 +2594,8 @@ RenderingDeviceDriverVulkan::YcbcrFormatCache *RenderingDeviceDriverVulkan::_ycb
 	cache_entry.ref_count = 1;
 	ycbcr_format_cache.insert(p_external_format, cache_entry);
 
-	ALOGD("YcbcrFormatCache: Created new conversion/sampler/pipeline for format 0x%llx",
-			(unsigned long long)p_external_format);
+	// ALOGD("YcbcrFormatCache: Created new conversion/sampler/pipeline for format 0x%llx",
+	// 		(unsigned long long)p_external_format);
 
 	return &ycbcr_format_cache.find(p_external_format)->value;
 }
@@ -2611,8 +2611,8 @@ void RenderingDeviceDriverVulkan::_ycbcr_format_cache_release(uint64_t p_externa
 	}
 
 	it->value.ref_count--;
-	ALOGD("YcbcrFormatCache: Released format 0x%llx (ref_count=%d)",
-			(unsigned long long)p_external_format, it->value.ref_count);
+	// ALOGD("YcbcrFormatCache: Released format 0x%llx (ref_count=%d)",
+	// 		(unsigned long long)p_external_format, it->value.ref_count);
 
 	if (it->value.ref_count == 0) {
 		// Free all resources.
@@ -2620,7 +2620,7 @@ void RenderingDeviceDriverVulkan::_ycbcr_format_cache_release(uint64_t p_externa
 		vkDestroySampler(vk_device, it->value.ycbcr_sampler, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER));
 		vkDestroySamplerYcbcrConversion(vk_device, it->value.ycbcr_conversion, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION));
 		ycbcr_format_cache.remove(it);
-		ALOGD("YcbcrFormatCache: Destroyed cache entry for format 0x%llx", (unsigned long long)p_external_format);
+		// ALOGD("YcbcrFormatCache: Destroyed cache entry for format 0x%llx", (unsigned long long)p_external_format);
 	}
 }
 
@@ -2962,7 +2962,7 @@ bool RenderingDeviceDriverVulkan::texture_ycbcr_blit(TextureID p_src_texture, Te
 	// Advance to next frame slot (double buffering).
 	pipeline->current_frame = (pipeline->current_frame + 1) % YCBCR_BLIT_FRAME_COUNT;
 
-	ALOGD("YCbCr blit: Submitted async conversion for %dx%d texture (frame %d).", p_width, p_height, frame_idx);
+	// ALOGD("YCbCr blit: Submitted async conversion for %dx%d texture (frame %d).", p_width, p_height, frame_idx);
 	return true;
 }
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
