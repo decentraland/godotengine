@@ -274,6 +274,17 @@ public:
 
 	virtual TextureID texture_create(const TextureFormat &p_format, const TextureView &p_view) = 0;
 	virtual TextureID texture_create_from_extension(uint64_t p_native_texture, TextureType p_type, DataFormat p_format, uint32_t p_array_layers, bool p_depth_stencil, uint32_t p_mipmaps) = 0;
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// Create a texture from an Android hardware buffer (AHardwareBuffer*).
+	// Returns TextureID() on failure or if not supported.
+	virtual TextureID texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) { return TextureID(); }
+	// Check if a texture has a YCbCr sampler (for external textures with YUV format).
+	virtual bool texture_has_ycbcr_sampler(TextureID p_texture) { return false; }
+	// Perform a YCbCr-to-RGBA blit from p_src_texture to p_dst_texture.
+	// This uses an internal pipeline with the YCbCr sampler as an immutable sampler.
+	// Returns true on success, false if the source texture doesn't have a YCbCr sampler or on error.
+	virtual bool texture_ycbcr_blit(TextureID p_src_texture, TextureID p_dst_texture, uint32_t p_width, uint32_t p_height) { return false; }
+#endif
 	// texture_create_shared_*() can only use original, non-view textures as original. RenderingDevice is responsible for ensuring that.
 	virtual TextureID texture_create_shared(TextureID p_original_texture, const TextureView &p_view) = 0;
 	virtual TextureID texture_create_shared_from_slice(TextureID p_original_texture, const TextureView &p_view, TextureSliceType p_slice_type, uint32_t p_layer, uint32_t p_layers, uint32_t p_mipmap, uint32_t p_mipmaps) = 0;

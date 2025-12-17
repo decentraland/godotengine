@@ -196,6 +196,14 @@ private:
 
 		CanvasTexture *canvas_texture = nullptr;
 
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+		// For external textures with YCbCr format (e.g., video from AHardwareBuffer).
+		// The YCbCr source texture is kept separate, and rd_texture holds the converted RGBA.
+		RID ycbcr_source_texture;
+		// Track if we've ever received a hardware buffer (for initial RGBA texture setup).
+		bool has_received_hardware_buffer = false;
+#endif
+
 		void cleanup();
 	};
 

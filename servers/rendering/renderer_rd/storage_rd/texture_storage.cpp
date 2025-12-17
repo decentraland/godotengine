@@ -65,6 +65,11 @@ void TextureStorage::Texture::cleanup() {
 	if (RD::get_singleton()->texture_is_valid(rd_texture)) {
 		RD::get_singleton()->free_rid(rd_texture);
 	}
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	if (RD::get_singleton()->texture_is_valid(ycbcr_source_texture)) {
+		RD::get_singleton()->free(ycbcr_source_texture);
+	}
+#endif
 	if (canvas_texture) {
 		memdelete(canvas_texture);
 	}
@@ -1141,6 +1146,50 @@ void TextureStorage::texture_3d_initialize(RID p_texture, Image::Format p_format
 }
 
 void TextureStorage::texture_external_initialize(RID p_texture, int p_width, int p_height, uint64_t p_external_buffer) {
+	Texture texture;
+
+	texture.type = TYPE_2D;
+	texture.layered_type = RS::TEXTURE_LAYERED_2D_ARRAY;
+	texture.width = p_width;
+	texture.height = p_height;
+	texture.depth = 1;
+	texture.layers = 1;
+	texture.mipmaps = 1;
+	texture.format = Image::FORMAT_RGBA8;
+	texture.validated_format = Image::FORMAT_RGBA8;
+	texture.rd_type = RD::TEXTURE_TYPE_2D;
+	texture.rd_format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+	texture.rd_format_srgb = RD::DATA_FORMAT_R8G8B8A8_SRGB;
+	texture.width_2d = p_width;
+	texture.height_2d = p_height;
+	texture.is_render_target = false;
+	texture.is_proxy = false;
+
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	if (p_external_buffer != 0) {
+		// Create texture from Android hardware buffer using the RD method which handles VkImage creation.
+		texture.rd_texture = RD::get_singleton()->texture_create_from_android_hardware_buffer(
+				p_external_buffer, p_width, p_height);
+	}
+#endif
+
+	// If no external buffer or external buffer creation failed, create a placeholder texture.
+	if (!texture.rd_texture.is_valid()) {
+		RD::TextureFormat tf;
+		tf.format = texture.rd_format;
+		tf.width = p_width;
+		tf.height = p_height;
+		tf.depth = 1;
+		tf.array_layers = 1;
+		tf.mipmaps = 1;
+		tf.texture_type = RD::TEXTURE_TYPE_2D;
+		tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT;
+
+		texture.rd_view.format_override = texture.rd_format;
+		texture.rd_texture = RD::get_singleton()->texture_create(tf, texture.rd_view);
+	}
+
+	texture_owner.initialize_rid(p_texture, texture);
 }
 
 void TextureStorage::texture_proxy_initialize(RID p_texture, RID p_base) {
@@ -1429,6 +1478,116 @@ void TextureStorage::texture_3d_update(RID p_texture, const Vector<Ref<Image>> &
 }
 
 void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_height, uint64_t p_external_buffer) {
+	Texture *tex = texture_owner.get_or_null(p_texture);
+	ERR_FAIL_NULL(tex);
+
+	// Update dimensions.
+	tex->width = p_width;
+	tex->height = p_height;
+	tex->width_2d = p_width;
+	tex->height_2d = p_height;
+
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	if (p_external_buffer != 0) {
+		// For external buffers with YCbCr format (video frames), we need to:
+		// 1. Create a YCbCr texture from the hardware buffer
+		// 2. Create an RGBA texture as the destination
+		// 3. Use a dedicated YCbCr blit pipeline to convert YCbCr to RGBA
+		// This is necessary because:
+		// - Vulkan YCbCr conversion requires combined image samplers with immutable samplers
+		// - The immutable sampler must be declared in the descriptor set layout at pipeline creation time
+		// - We create a dedicated pipeline with the YCbCr sampler as immutable
+
+		// Free the old YCbCr source texture if it exists.
+		// We must create a new texture for each new hardware buffer because
+		// the external memory binding is done at texture creation time.
+		if (tex->ycbcr_source_texture.is_valid()) {
+			RD::get_singleton()->free(tex->ycbcr_source_texture);
+			tex->ycbcr_source_texture = RID();
+		}
+
+		// Create new YCbCr texture from Android hardware buffer.
+		RID ycbcr_texture = RD::get_singleton()->texture_create_from_android_hardware_buffer(
+				p_external_buffer, p_width, p_height);
+
+		if (ycbcr_texture.is_valid()) {
+			// Track if this is the first time we're receiving a hardware buffer.
+			// If so, we need to recreate the destination texture with STORAGE_BIT
+			// because the placeholder created in texture_external_initialize doesn't have it.
+			bool first_hardware_buffer = !tex->has_received_hardware_buffer;
+			tex->has_received_hardware_buffer = true;
+
+			// Store the YCbCr source texture for cleanup on next update or destruction.
+			tex->ycbcr_source_texture = ycbcr_texture;
+
+			// Create or recreate the RGBA destination texture if needed.
+			bool need_new_dest = !tex->rd_texture.is_valid() || first_hardware_buffer;
+			if (tex->rd_texture.is_valid() && !first_hardware_buffer) {
+				// Check if dimensions changed.
+				Vector2i current_size = RD::get_singleton()->texture_size(tex->rd_texture);
+				if (current_size.x != p_width || current_size.y != p_height) {
+					need_new_dest = true;
+				}
+			}
+
+			if (need_new_dest) {
+				// Free the old texture if it exists.
+				if (tex->rd_texture.is_valid()) {
+					RD::get_singleton()->free(tex->rd_texture);
+					tex->rd_texture = RID();
+				}
+
+				// Create RGBA destination texture with STORAGE_BIT for compute shader write.
+				RD::TextureFormat tf;
+				tf.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+				tf.width = p_width;
+				tf.height = p_height;
+				tf.depth = 1;
+				tf.array_layers = 1;
+				tf.mipmaps = 1;
+				tf.texture_type = RD::TEXTURE_TYPE_2D;
+				tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT;
+
+				tex->rd_view.format_override = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+				tex->rd_texture = RD::get_singleton()->texture_create(tf, tex->rd_view);
+				print_verbose(vformat("texture_external_update: created RGBA dest texture %dx%d with STORAGE_BIT", p_width, p_height));
+			}
+
+			// Perform the YCbCr to RGBA blit using the dedicated YCbCr pipeline.
+			// This uses a compute shader with an immutable YCbCr sampler in the
+			// descriptor set layout, which is required by Vulkan for YCbCr conversion.
+			if (tex->rd_texture.is_valid()) {
+				bool success = RD::get_singleton()->texture_ycbcr_blit(
+						ycbcr_texture, tex->rd_texture, p_width, p_height);
+				if (!success) {
+					print_verbose("texture_external_update: texture_ycbcr_blit failed");
+				}
+			} else {
+				print_verbose("texture_external_update: rd_texture not valid for YCbCr blit");
+			}
+
+			return;
+		}
+	}
+#endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+
+	// Fallback: If no external buffer or creation failed, create/recreate placeholder texture.
+	if (tex->rd_texture.is_valid()) {
+		RD::get_singleton()->free(tex->rd_texture);
+	}
+
+	RD::TextureFormat tf;
+	tf.format = tex->rd_format;
+	tf.width = p_width;
+	tf.height = p_height;
+	tf.depth = 1;
+	tf.array_layers = 1;
+	tf.mipmaps = 1;
+	tf.texture_type = RD::TEXTURE_TYPE_2D;
+	tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT;
+
+	tex->rd_view.format_override = tex->rd_format;
+	tex->rd_texture = RD::get_singleton()->texture_create(tf, tex->rd_view);
 }
 
 void TextureStorage::texture_proxy_update(RID p_texture, RID p_proxy_to) {
