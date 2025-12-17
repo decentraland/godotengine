@@ -42,6 +42,18 @@
 #include "platform/android/thread_jandroid.h"
 #endif
 
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+#include "modules/glslang/shader_compile.h"
+#include <android/log.h>
+
+#ifdef DEBUG_ENABLED
+#define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "GodotVulkan", __VA_ARGS__)
+#else
+#define ALOGD(...)
+#endif
+
+#endif
+
 #if defined(SWAPPY_FRAME_PACING_ENABLED)
 #include "thirdparty/swappy-frame-pacing/swappyVk.h"
 #endif
@@ -537,6 +549,14 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	// We don't actually use this extension, but some runtime components on some platforms
 	// can and will fill the validation layers with useless info otherwise if not enabled.
 	_register_requested_device_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, false);
+
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// Android hardware buffer extension for external texture support (video playback, etc.)
+	_register_requested_device_extension(VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME, false);
+#endif
 
 	if (Engine::get_singleton()->is_generate_spirv_debug_info_enabled()) {
 		_register_requested_device_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, true);
@@ -2065,6 +2085,222 @@ RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_extension(uint64
 	return TextureID(tex_info);
 }
 
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+#include <android/hardware_buffer.h>
+
+RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_android_hardware_buffer(void *p_hardware_buffer, uint32_t p_width, uint32_t p_height) {
+	// Version tag for debugging - change this when updating the code.
+	// ALOGD("AHardwareBuffer texture_create v4 - with uniform path diagnostics");
+
+	ERR_FAIL_NULL_V(p_hardware_buffer, TextureID());
+
+	AHardwareBuffer *hardware_buffer = static_cast<AHardwareBuffer *>(p_hardware_buffer);
+
+	// Check if the extension is available.
+	if (!enabled_device_extension_names.has(VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME)) {
+		ERR_FAIL_V_MSG(TextureID(), "VK_ANDROID_external_memory_android_hardware_buffer extension not available.");
+	}
+
+	// Get hardware buffer properties.
+	VkAndroidHardwareBufferPropertiesANDROID buffer_properties = {};
+	buffer_properties.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
+
+	VkAndroidHardwareBufferFormatPropertiesANDROID format_properties = {};
+	format_properties.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID;
+	buffer_properties.pNext = &format_properties;
+
+	PFN_vkGetAndroidHardwareBufferPropertiesANDROID vkGetAndroidHardwareBufferPropertiesANDROID =
+			(PFN_vkGetAndroidHardwareBufferPropertiesANDROID)vkGetDeviceProcAddr(vk_device, "vkGetAndroidHardwareBufferPropertiesANDROID");
+
+	ERR_FAIL_NULL_V_MSG(vkGetAndroidHardwareBufferPropertiesANDROID, TextureID(), "Failed to get vkGetAndroidHardwareBufferPropertiesANDROID function.");
+
+	VkResult err = vkGetAndroidHardwareBufferPropertiesANDROID(vk_device, hardware_buffer, &buffer_properties);
+	ERR_FAIL_COND_V_MSG(err != VK_SUCCESS, TextureID(), "vkGetAndroidHardwareBufferPropertiesANDROID failed with error " + itos(err) + ".");
+
+	// Check if we have an external format (YUV video frames typically use external formats).
+	bool use_external_format = (format_properties.format == VK_FORMAT_UNDEFINED && format_properties.externalFormat != 0);
+
+	// Create external memory image.
+	VkExternalMemoryImageCreateInfo external_memory_image_create_info = {};
+	external_memory_image_create_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+	external_memory_image_create_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
+
+	// For external formats (YUV), we need to chain VkExternalFormatANDROID.
+	VkExternalFormatANDROID external_format_info = {};
+	if (use_external_format) {
+		external_format_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID;
+		external_format_info.externalFormat = format_properties.externalFormat;
+		external_memory_image_create_info.pNext = &external_format_info;
+	}
+
+	VkImageCreateInfo image_create_info = {};
+	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_create_info.pNext = &external_memory_image_create_info;
+	image_create_info.imageType = VK_IMAGE_TYPE_2D;
+	image_create_info.format = format_properties.format; // VK_FORMAT_UNDEFINED for external formats.
+	image_create_info.extent.width = p_width;
+	image_create_info.extent.height = p_height;
+	image_create_info.extent.depth = 1;
+	image_create_info.mipLevels = 1;
+	image_create_info.arrayLayers = 1;
+	image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	VkImage vk_image = VK_NULL_HANDLE;
+	err = vkCreateImage(vk_device, &image_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE), &vk_image);
+	ERR_FAIL_COND_V_MSG(err != VK_SUCCESS, TextureID(), "vkCreateImage failed with error " + itos(err) + ".");
+
+	// Import memory from AHardwareBuffer.
+	VkImportAndroidHardwareBufferInfoANDROID import_info = {};
+	import_info.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
+	import_info.buffer = hardware_buffer;
+
+	VkMemoryDedicatedAllocateInfo dedicated_info = {};
+	dedicated_info.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+	dedicated_info.pNext = &import_info;
+	dedicated_info.image = vk_image;
+
+	// For external formats, we should use the allocation size from buffer properties directly.
+	// Don't query memory requirements for external format images as it may return incorrect values.
+	uint32_t memory_type_index = UINT32_MAX;
+	if (use_external_format) {
+		// For external formats, just use the first compatible memory type from buffer properties.
+		for (uint32_t i = 0; i < 32; i++) {
+			if (buffer_properties.memoryTypeBits & (1 << i)) {
+				memory_type_index = i;
+				break;
+			}
+		}
+	} else {
+		VkMemoryRequirements memory_requirements = {};
+		vkGetImageMemoryRequirements(vk_device, vk_image, &memory_requirements);
+
+		// Find a suitable memory type.
+		for (uint32_t i = 0; i < 32; i++) {
+			if ((buffer_properties.memoryTypeBits & (1 << i)) && (memory_requirements.memoryTypeBits & (1 << i))) {
+				memory_type_index = i;
+				break;
+			}
+		}
+	}
+	ERR_FAIL_COND_V_MSG(memory_type_index == UINT32_MAX, TextureID(), "No suitable memory type found for AHardwareBuffer.");
+
+	VkMemoryAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.pNext = &dedicated_info;
+	alloc_info.allocationSize = buffer_properties.allocationSize;
+	alloc_info.memoryTypeIndex = memory_type_index;
+
+	VkDeviceMemory vk_memory = VK_NULL_HANDLE;
+	err = vkAllocateMemory(vk_device, &alloc_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DEVICE_MEMORY), &vk_memory);
+	if (err != VK_SUCCESS) {
+		vkDestroyImage(vk_device, vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+		ERR_FAIL_V_MSG(TextureID(), "vkAllocateMemory failed with error " + itos(err) + ".");
+	}
+
+	// Use vkBindImageMemory2 for proper external memory binding.
+	VkBindImageMemoryInfo bind_info = {};
+	bind_info.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
+	bind_info.image = vk_image;
+	bind_info.memory = vk_memory;
+	bind_info.memoryOffset = 0;
+
+	err = vkBindImageMemory2(vk_device, 1, &bind_info);
+	if (err != VK_SUCCESS) {
+		vkFreeMemory(vk_device, vk_memory, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DEVICE_MEMORY));
+		vkDestroyImage(vk_device, vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+		ERR_FAIL_V_MSG(TextureID(), "vkBindImageMemory failed with error " + itos(err) + ".");
+	}
+
+	// Create image view.
+	VkSamplerYcbcrConversionInfo ycbcr_info = {};
+	VkSamplerYcbcrConversion ycbcr_conversion = VK_NULL_HANDLE;
+	VkSampler ycbcr_sampler = VK_NULL_HANDLE;
+	uint64_t cached_external_format = 0;
+
+	VkImageViewCreateInfo image_view_create_info = {};
+	image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	image_view_create_info.image = vk_image;
+	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	image_view_create_info.format = format_properties.format;
+	image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	image_view_create_info.subresourceRange.baseMipLevel = 0;
+	image_view_create_info.subresourceRange.levelCount = 1;
+	image_view_create_info.subresourceRange.baseArrayLayer = 0;
+	image_view_create_info.subresourceRange.layerCount = 1;
+
+	// For YCbCr formats (external formats), use cached conversion/sampler/pipeline.
+	if (use_external_format) {
+		// Log the YCbCr properties for debugging.
+		// ALOGD("AHardwareBuffer YCbCr: model=%d range=%d suggested_components=(%d,%d,%d,%d) chroma=(%d,%d) format=0x%llx",
+		// 		(int)format_properties.suggestedYcbcrModel,
+		// 		(int)format_properties.suggestedYcbcrRange,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.r,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.g,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.b,
+		// 		(int)format_properties.samplerYcbcrConversionComponents.a,
+		// 		(int)format_properties.suggestedXChromaOffset,
+		// 		(int)format_properties.suggestedYChromaOffset,
+		// 		(unsigned long long)format_properties.externalFormat);
+
+		// Get or create cached conversion/sampler/pipeline for this format.
+		YcbcrFormatCache *format_cache = _ycbcr_format_cache_get_or_create(format_properties.externalFormat, format_properties);
+		if (!format_cache) {
+			vkFreeMemory(vk_device, vk_memory, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DEVICE_MEMORY));
+			vkDestroyImage(vk_device, vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+			ERR_FAIL_V_MSG(TextureID(), "Failed to get or create YCbCr format cache.");
+		}
+
+		// Use the cached conversion and sampler.
+		ycbcr_conversion = format_cache->ycbcr_conversion;
+		ycbcr_sampler = format_cache->ycbcr_sampler;
+		cached_external_format = format_properties.externalFormat;
+
+		ycbcr_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
+		ycbcr_info.conversion = ycbcr_conversion;
+		image_view_create_info.pNext = &ycbcr_info;
+	}
+
+	VkImageView vk_image_view = VK_NULL_HANDLE;
+	err = vkCreateImageView(vk_device, &image_view_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE_VIEW), &vk_image_view);
+	if (err != VK_SUCCESS) {
+		if (cached_external_format != 0) {
+			_ycbcr_format_cache_release(cached_external_format);
+		}
+		vkFreeMemory(vk_device, vk_memory, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DEVICE_MEMORY));
+		vkDestroyImage(vk_device, vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+		ERR_FAIL_V_MSG(TextureID(), "vkCreateImageView failed with error " + itos(err) + ".");
+	}
+
+	// Bookkeep.
+	TextureInfo *tex_info = VersatileResource::allocate<TextureInfo>(resources_allocator);
+	tex_info->vk_image = vk_image;
+	tex_info->vk_view = vk_image_view;
+	tex_info->rd_format = DATA_FORMAT_R8G8B8A8_UNORM; // Best guess, actual format may vary.
+	tex_info->vk_create_info = image_create_info;
+	tex_info->vk_view_create_info = image_view_create_info;
+	// Store references to cached YCbCr resources (not owned by this texture).
+	tex_info->ycbcr_conversion = ycbcr_conversion;
+	tex_info->ycbcr_sampler = ycbcr_sampler;
+	tex_info->external_memory = vk_memory;
+	tex_info->ycbcr_external_format = cached_external_format;
+	// Note: We're not using VMA for external memory, so allocation.handle stays null.
+#ifdef DEBUG_ENABLED
+	tex_info->created_from_extension = true;
+#endif
+
+	return TextureID(tex_info);
+}
+
+#endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+
 RDD::TextureID RenderingDeviceDriverVulkan::texture_create_shared(TextureID p_original_texture, const TextureView &p_view) {
 	const TextureInfo *owner_tex_info = (const TextureInfo *)p_original_texture.id;
 #ifdef DEBUG_ENABLED
@@ -2186,8 +2422,550 @@ void RenderingDeviceDriverVulkan::texture_free(TextureID p_texture) {
 			vmaFreeMemory(allocator, tex_info->allocation.handle);
 		}
 	}
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// Clean up AHardwareBuffer resources.
+	// Release the format cache reference (sampler/conversion/pipeline are shared).
+	if (tex_info->ycbcr_external_format != 0) {
+		_ycbcr_format_cache_release(tex_info->ycbcr_external_format);
+	}
+	// Clean up the texture-specific resources (image and memory).
+	if (tex_info->external_memory != VK_NULL_HANDLE) {
+		vkDestroyImage(vk_device, tex_info->vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+		vkFreeMemory(vk_device, tex_info->external_memory, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DEVICE_MEMORY));
+	}
+#endif
 	VersatileResource::free(resources_allocator, tex_info);
 }
+
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+bool RenderingDeviceDriverVulkan::texture_has_ycbcr_sampler(TextureID p_texture) {
+	const TextureInfo *tex_info = (const TextureInfo *)p_texture.id;
+	return tex_info->ycbcr_sampler != VK_NULL_HANDLE;
+}
+
+// GLSL source for YCbCr-to-RGBA blit compute shader.
+// The YCbCr sampler does the conversion automatically.
+static const char *ycbcr_blit_shader_glsl = R"(
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Binding 0: YCbCr sampler (must be immutable in descriptor set layout).
+// The sampler performs automatic YCbCr to RGB conversion.
+layout(set = 0, binding = 0) uniform sampler2D source_texture;
+
+// Binding 1: RGBA output storage image.
+layout(rgba8, set = 0, binding = 1) uniform restrict writeonly image2D dest_buffer;
+
+void main() {
+	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(dest_buffer);
+
+	// Bounds check.
+	if (pos.x >= size.x || pos.y >= size.y) {
+		return;
+	}
+
+	// Sample using normalized UV coordinates.
+	// Add 0.5 to sample at pixel center.
+	vec2 uv = (vec2(pos) + 0.5) / vec2(size);
+
+	// Sample the YCbCr texture. The YCbCr sampler automatically converts to RGB.
+	vec4 color = texture(source_texture, uv);
+
+	// Ensure alpha is 1.0 for opaque video.
+	color.a = 1.0;
+
+	// Write to output image.
+	imageStore(dest_buffer, pos, color);
+}
+)";
+
+void RenderingDeviceDriverVulkan::_ycbcr_blit_pipeline_free(YcbcrBlitPipeline &p_pipeline) {
+	// Destroy fences first (wait for any pending work).
+	for (int i = 0; i < YCBCR_BLIT_FRAME_COUNT; i++) {
+		if (p_pipeline.fences[i] != VK_NULL_HANDLE) {
+			// Wait for fence before destroying to ensure GPU work is complete.
+			vkWaitForFences(vk_device, 1, &p_pipeline.fences[i], VK_TRUE, UINT64_MAX);
+			vkDestroyFence(vk_device, p_pipeline.fences[i], VKC::get_allocation_callbacks(VK_OBJECT_TYPE_FENCE));
+		}
+	}
+	if (p_pipeline.command_pool != VK_NULL_HANDLE) {
+		// Command buffers and descriptor sets are freed implicitly when their pools are destroyed.
+		vkDestroyCommandPool(vk_device, p_pipeline.command_pool, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_COMMAND_POOL));
+	}
+	if (p_pipeline.pipeline != VK_NULL_HANDLE) {
+		vkDestroyPipeline(vk_device, p_pipeline.pipeline, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE));
+	}
+	if (p_pipeline.pipeline_layout != VK_NULL_HANDLE) {
+		vkDestroyPipelineLayout(vk_device, p_pipeline.pipeline_layout, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE_LAYOUT));
+	}
+	if (p_pipeline.descriptor_set_layout != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(vk_device, p_pipeline.descriptor_set_layout, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT));
+	}
+	if (p_pipeline.descriptor_pool != VK_NULL_HANDLE) {
+		vkDestroyDescriptorPool(vk_device, p_pipeline.descriptor_pool, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DESCRIPTOR_POOL));
+	}
+	if (p_pipeline.shader_module != VK_NULL_HANDLE) {
+		vkDestroyShaderModule(vk_device, p_pipeline.shader_module, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SHADER_MODULE));
+	}
+	p_pipeline = YcbcrBlitPipeline();
+}
+
+RenderingDeviceDriverVulkan::YcbcrFormatCache *RenderingDeviceDriverVulkan::_ycbcr_format_cache_get_or_create(
+		uint64_t p_external_format, const VkAndroidHardwareBufferFormatPropertiesANDROID &p_format_properties) {
+	// Check if we already have a cached entry for this format.
+	HashMap<uint64_t, YcbcrFormatCache>::Iterator it = ycbcr_format_cache.find(p_external_format);
+	if (it != ycbcr_format_cache.end()) {
+		it->value.ref_count++;
+		// ALOGD("YcbcrFormatCache: Reusing cached conversion/sampler/pipeline for format 0x%llx (ref_count=%d)",
+		// 		(unsigned long long)p_external_format, it->value.ref_count);
+		return &it->value;
+	}
+
+	// Create new cache entry.
+	YcbcrFormatCache cache_entry;
+	VkResult err;
+
+	// Create YCbCr conversion.
+	VkExternalFormatANDROID ycbcr_external_format = {};
+	ycbcr_external_format.sType = VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID;
+	ycbcr_external_format.externalFormat = p_external_format;
+
+	VkSamplerYcbcrConversionCreateInfo ycbcr_create_info = {};
+	ycbcr_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO;
+	ycbcr_create_info.pNext = &ycbcr_external_format;
+	ycbcr_create_info.format = VK_FORMAT_UNDEFINED;
+	ycbcr_create_info.ycbcrModel = p_format_properties.suggestedYcbcrModel;
+	ycbcr_create_info.ycbcrRange = p_format_properties.suggestedYcbcrRange;
+	ycbcr_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	ycbcr_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	ycbcr_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	ycbcr_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	ycbcr_create_info.xChromaOffset = p_format_properties.suggestedXChromaOffset;
+	ycbcr_create_info.yChromaOffset = p_format_properties.suggestedYChromaOffset;
+	ycbcr_create_info.chromaFilter = VK_FILTER_LINEAR;
+	ycbcr_create_info.forceExplicitReconstruction = VK_FALSE;
+
+	err = vkCreateSamplerYcbcrConversion(vk_device, &ycbcr_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION), &cache_entry.ycbcr_conversion);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YcbcrFormatCache: vkCreateSamplerYcbcrConversion failed with error %d", (int)err));
+		return nullptr;
+	}
+
+	// Create sampler with YCbCr conversion.
+	VkSamplerYcbcrConversionInfo ycbcr_info = {};
+	ycbcr_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
+	ycbcr_info.conversion = cache_entry.ycbcr_conversion;
+
+	VkSamplerCreateInfo sampler_create_info = {};
+	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_create_info.pNext = &ycbcr_info;
+	sampler_create_info.magFilter = VK_FILTER_LINEAR;
+	sampler_create_info.minFilter = VK_FILTER_LINEAR;
+	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_create_info.mipLodBias = 0.0f;
+	sampler_create_info.anisotropyEnable = VK_FALSE;
+	sampler_create_info.maxAnisotropy = 1.0f;
+	sampler_create_info.compareEnable = VK_FALSE;
+	sampler_create_info.minLod = 0.0f;
+	sampler_create_info.maxLod = 0.0f;
+	sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+
+	err = vkCreateSampler(vk_device, &sampler_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER), &cache_entry.ycbcr_sampler);
+	if (err != VK_SUCCESS) {
+		vkDestroySamplerYcbcrConversion(vk_device, cache_entry.ycbcr_conversion, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION));
+		ERR_PRINT(vformat("YcbcrFormatCache: vkCreateSampler failed with error %d", (int)err));
+		return nullptr;
+	}
+
+	// Create blit pipeline for this sampler.
+	if (!_ycbcr_blit_pipeline_create(cache_entry.ycbcr_sampler, cache_entry.pipeline)) {
+		vkDestroySampler(vk_device, cache_entry.ycbcr_sampler, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER));
+		vkDestroySamplerYcbcrConversion(vk_device, cache_entry.ycbcr_conversion, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION));
+		ERR_PRINT("YcbcrFormatCache: Failed to create blit pipeline");
+		return nullptr;
+	}
+
+	cache_entry.ref_count = 1;
+	ycbcr_format_cache.insert(p_external_format, cache_entry);
+
+	// ALOGD("YcbcrFormatCache: Created new conversion/sampler/pipeline for format 0x%llx",
+	// 		(unsigned long long)p_external_format);
+
+	return &ycbcr_format_cache.find(p_external_format)->value;
+}
+
+void RenderingDeviceDriverVulkan::_ycbcr_format_cache_release(uint64_t p_external_format) {
+	if (p_external_format == 0) {
+		return;
+	}
+
+	HashMap<uint64_t, YcbcrFormatCache>::Iterator it = ycbcr_format_cache.find(p_external_format);
+	if (it == ycbcr_format_cache.end()) {
+		return;
+	}
+
+	it->value.ref_count--;
+	// ALOGD("YcbcrFormatCache: Released format 0x%llx (ref_count=%d)",
+	// 		(unsigned long long)p_external_format, it->value.ref_count);
+
+	if (it->value.ref_count == 0) {
+		// Free all resources.
+		_ycbcr_blit_pipeline_free(it->value.pipeline);
+		vkDestroySampler(vk_device, it->value.ycbcr_sampler, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER));
+		vkDestroySamplerYcbcrConversion(vk_device, it->value.ycbcr_conversion, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION));
+		ycbcr_format_cache.remove(it);
+		// ALOGD("YcbcrFormatCache: Destroyed cache entry for format 0x%llx", (unsigned long long)p_external_format);
+	}
+}
+
+bool RenderingDeviceDriverVulkan::_ycbcr_blit_pipeline_create(VkSampler p_ycbcr_sampler, YcbcrBlitPipeline &r_pipeline) {
+	VkResult err;
+
+	// Compile shader from GLSL source using Godot's glslang module.
+	String error_str;
+	Vector<uint8_t> spirv = compile_glslang_shader(
+			RenderingDeviceCommons::SHADER_STAGE_COMPUTE,
+			String(ycbcr_blit_shader_glsl),
+			RenderingDeviceCommons::SHADER_LANGUAGE_VULKAN_VERSION_1_0,
+			RenderingDeviceCommons::SHADER_SPIRV_VERSION_1_0,
+			&error_str);
+
+	if (spirv.is_empty()) {
+		ERR_PRINT(vformat("YCbCr blit: Failed to compile shader: %s", error_str));
+		return false;
+	}
+
+	// Create shader module.
+	VkShaderModuleCreateInfo shader_module_create_info = {};
+	shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	shader_module_create_info.codeSize = spirv.size();
+	shader_module_create_info.pCode = (const uint32_t *)spirv.ptr();
+
+	err = vkCreateShaderModule(vk_device, &shader_module_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SHADER_MODULE), &r_pipeline.shader_module);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreateShaderModule failed with error %d", (int)err));
+		return false;
+	}
+
+	// Create descriptor set layout with immutable YCbCr sampler.
+	VkDescriptorSetLayoutBinding bindings[2] = {};
+	// Binding 0: Combined image sampler with immutable YCbCr sampler.
+	bindings[0].binding = 0;
+	bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	bindings[0].descriptorCount = 1;
+	bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	bindings[0].pImmutableSamplers = &p_ycbcr_sampler; // KEY: Immutable sampler for YCbCr!
+
+	// Binding 1: Storage image for output.
+	bindings[1].binding = 1;
+	bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	bindings[1].descriptorCount = 1;
+	bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {};
+	descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	descriptor_set_layout_create_info.bindingCount = 2;
+	descriptor_set_layout_create_info.pBindings = bindings;
+
+	err = vkCreateDescriptorSetLayout(vk_device, &descriptor_set_layout_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT), &r_pipeline.descriptor_set_layout);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreateDescriptorSetLayout failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Create pipeline layout.
+	VkPipelineLayoutCreateInfo pipeline_layout_create_info = {};
+	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout_create_info.setLayoutCount = 1;
+	pipeline_layout_create_info.pSetLayouts = &r_pipeline.descriptor_set_layout;
+
+	err = vkCreatePipelineLayout(vk_device, &pipeline_layout_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE_LAYOUT), &r_pipeline.pipeline_layout);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreatePipelineLayout failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Create compute pipeline.
+	VkComputePipelineCreateInfo compute_pipeline_create_info = {};
+	compute_pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	compute_pipeline_create_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	compute_pipeline_create_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	compute_pipeline_create_info.stage.module = r_pipeline.shader_module;
+	compute_pipeline_create_info.stage.pName = "main";
+	compute_pipeline_create_info.layout = r_pipeline.pipeline_layout;
+
+	err = vkCreateComputePipelines(vk_device, VK_NULL_HANDLE, 1, &compute_pipeline_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE), &r_pipeline.pipeline);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreateComputePipelines failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Create descriptor pool.
+	VkDescriptorPoolSize pool_sizes[2] = {};
+	pool_sizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	pool_sizes[0].descriptorCount = 16;
+	pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	pool_sizes[1].descriptorCount = 16;
+
+	VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+	descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	descriptor_pool_create_info.maxSets = 16;
+	descriptor_pool_create_info.poolSizeCount = 2;
+	descriptor_pool_create_info.pPoolSizes = pool_sizes;
+
+	err = vkCreateDescriptorPool(vk_device, &descriptor_pool_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_DESCRIPTOR_POOL), &r_pipeline.descriptor_pool);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreateDescriptorPool failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Find a graphics-capable queue family if not already done.
+	if (ycbcr_blit_queue_family_index == UINT32_MAX) {
+		for (uint32_t i = 0; i < queue_family_properties.size(); i++) {
+			if (queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+				ycbcr_blit_queue_family_index = i;
+				break;
+			}
+		}
+		if (ycbcr_blit_queue_family_index == UINT32_MAX) {
+			ERR_PRINT("YCbCr blit: No graphics-capable queue family found.");
+			_ycbcr_blit_pipeline_free(r_pipeline);
+			return false;
+		}
+	}
+
+	// Create command pool.
+	VkCommandPoolCreateInfo cmd_pool_info = {};
+	cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cmd_pool_info.queueFamilyIndex = ycbcr_blit_queue_family_index;
+	cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	err = vkCreateCommandPool(vk_device, &cmd_pool_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_COMMAND_POOL), &r_pipeline.command_pool);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkCreateCommandPool failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Allocate double-buffered command buffers.
+	VkCommandBufferAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = r_pipeline.command_pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = YCBCR_BLIT_FRAME_COUNT;
+
+	err = vkAllocateCommandBuffers(vk_device, &alloc_info, r_pipeline.command_buffers);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkAllocateCommandBuffers failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Allocate double-buffered descriptor sets.
+	VkDescriptorSetLayout layouts[YCBCR_BLIT_FRAME_COUNT] = { r_pipeline.descriptor_set_layout, r_pipeline.descriptor_set_layout };
+	VkDescriptorSetAllocateInfo desc_alloc_info = {};
+	desc_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	desc_alloc_info.descriptorPool = r_pipeline.descriptor_pool;
+	desc_alloc_info.descriptorSetCount = YCBCR_BLIT_FRAME_COUNT;
+	desc_alloc_info.pSetLayouts = layouts;
+
+	err = vkAllocateDescriptorSets(vk_device, &desc_alloc_info, r_pipeline.descriptor_sets);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkAllocateDescriptorSets (pre-alloc) failed with error %d", (int)err));
+		_ycbcr_blit_pipeline_free(r_pipeline);
+		return false;
+	}
+
+	// Create double-buffered fences (signaled initially so first wait succeeds).
+	VkFenceCreateInfo fence_info = {};
+	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	for (int i = 0; i < YCBCR_BLIT_FRAME_COUNT; i++) {
+		err = vkCreateFence(vk_device, &fence_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_FENCE), &r_pipeline.fences[i]);
+		if (err != VK_SUCCESS) {
+			ERR_PRINT(vformat("YCbCr blit: vkCreateFence failed with error %d", (int)err));
+			_ycbcr_blit_pipeline_free(r_pipeline);
+			return false;
+		}
+	}
+
+	r_pipeline.current_frame = 0;
+	print_verbose("YCbCr blit: Created pipeline with immutable sampler and double-buffered resources.");
+	return true;
+}
+
+bool RenderingDeviceDriverVulkan::texture_ycbcr_blit(TextureID p_src_texture, TextureID p_dst_texture, uint32_t p_width, uint32_t p_height) {
+	const TextureInfo *src_tex_info = (const TextureInfo *)p_src_texture.id;
+	const TextureInfo *dst_tex_info = (const TextureInfo *)p_dst_texture.id;
+
+	if (src_tex_info->ycbcr_external_format == 0) {
+		ERR_PRINT("YCbCr blit: Source texture has no YCbCr external format.");
+		return false;
+	}
+
+	// Get the cached pipeline for this external format.
+	HashMap<uint64_t, YcbcrFormatCache>::Iterator it = ycbcr_format_cache.find(src_tex_info->ycbcr_external_format);
+	if (it == ycbcr_format_cache.end()) {
+		ERR_PRINT("YCbCr blit: No cached format entry found for external format.");
+		return false;
+	}
+	YcbcrBlitPipeline *pipeline = &it->value.pipeline;
+
+	// Get current frame index and resources.
+	int frame_idx = pipeline->current_frame;
+	VkFence fence = pipeline->fences[frame_idx];
+	VkCommandBuffer cmd_buffer = pipeline->command_buffers[frame_idx];
+	VkDescriptorSet descriptor_set = pipeline->descriptor_sets[frame_idx];
+
+	// Wait for the fence from this frame slot (ensures previous use is complete).
+	// This is a non-blocking wait most of the time since we alternate between 2 slots.
+	VkResult err = vkWaitForFences(vk_device, 1, &fence, VK_TRUE, UINT64_MAX);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkWaitForFences failed with error %d", (int)err));
+		return false;
+	}
+	vkResetFences(vk_device, 1, &fence);
+
+	// Update descriptor set with new source and destination textures.
+	VkDescriptorImageInfo src_image_info = {};
+	src_image_info.sampler = src_tex_info->ycbcr_sampler; // Will be ignored due to immutable sampler.
+	src_image_info.imageView = src_tex_info->vk_view;
+	src_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkDescriptorImageInfo dst_image_info = {};
+	dst_image_info.imageView = dst_tex_info->vk_view;
+	dst_image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkWriteDescriptorSet writes[2] = {};
+	writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	writes[0].dstSet = descriptor_set;
+	writes[0].dstBinding = 0;
+	writes[0].descriptorCount = 1;
+	writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	writes[0].pImageInfo = &src_image_info;
+
+	writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	writes[1].dstSet = descriptor_set;
+	writes[1].dstBinding = 1;
+	writes[1].descriptorCount = 1;
+	writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	writes[1].pImageInfo = &dst_image_info;
+
+	vkUpdateDescriptorSets(vk_device, 2, writes, 0, nullptr);
+
+	// Begin command buffer.
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkResetCommandBuffer(cmd_buffer, 0);
+	err = vkBeginCommandBuffer(cmd_buffer, &begin_info);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkBeginCommandBuffer failed with error %d", (int)err));
+		return false;
+	}
+
+	// Transition source image to shader read layout.
+	// For external memory (AHardwareBuffer), we need to acquire from the foreign queue family.
+	// VK_QUEUE_FAMILY_FOREIGN_EXT indicates the image was written by an external API (Android/ExoPlayer).
+	VkImageMemoryBarrier src_barrier = {};
+	src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	src_barrier.srcAccessMask = 0; // External writes don't use Vulkan access masks.
+	src_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	src_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	src_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
+	src_barrier.dstQueueFamilyIndex = ycbcr_blit_queue_family_index;
+	src_barrier.image = src_tex_info->vk_image;
+	src_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	src_barrier.subresourceRange.baseMipLevel = 0;
+	src_barrier.subresourceRange.levelCount = 1;
+	src_barrier.subresourceRange.baseArrayLayer = 0;
+	src_barrier.subresourceRange.layerCount = 1;
+
+	// Transition destination image to general layout for storage write.
+	VkImageMemoryBarrier dst_barrier = {};
+	dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	dst_barrier.srcAccessMask = 0;
+	dst_barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	dst_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	dst_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	dst_barrier.image = dst_tex_info->vk_image;
+	dst_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	dst_barrier.subresourceRange.baseMipLevel = 0;
+	dst_barrier.subresourceRange.levelCount = 1;
+	dst_barrier.subresourceRange.baseArrayLayer = 0;
+	dst_barrier.subresourceRange.layerCount = 1;
+
+	VkImageMemoryBarrier barriers[2] = { src_barrier, dst_barrier };
+	vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			0, 0, nullptr, 0, nullptr, 2, barriers);
+
+	// Bind pipeline and descriptor set.
+	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline);
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+
+	// Dispatch compute shader.
+	uint32_t groups_x = (p_width + 7) / 8;
+	uint32_t groups_y = (p_height + 7) / 8;
+	vkCmdDispatch(cmd_buffer, groups_x, groups_y, 1);
+
+	// Transition destination image to shader read optimal for subsequent use.
+	dst_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	dst_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	dst_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+	dst_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			0, 0, nullptr, 0, nullptr, 1, &dst_barrier);
+
+	// End command buffer.
+	err = vkEndCommandBuffer(cmd_buffer);
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkEndCommandBuffer failed with error %d", (int)err));
+		return false;
+	}
+
+	// Submit command buffer with fence for async completion tracking.
+	DEV_ASSERT(ycbcr_blit_queue_family_index < queue_families.size());
+	DEV_ASSERT(!queue_families[ycbcr_blit_queue_family_index].is_empty());
+	Queue &queue = queue_families[ycbcr_blit_queue_family_index][0];
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &cmd_buffer;
+
+	queue.submit_mutex.lock();
+	err = vkQueueSubmit(queue.queue, 1, &submit_info, fence);
+	queue.submit_mutex.unlock();
+
+	if (err != VK_SUCCESS) {
+		ERR_PRINT(vformat("YCbCr blit: vkQueueSubmit failed with error %d", (int)err));
+		return false;
+	}
+
+	// Advance to next frame slot (double buffering).
+	pipeline->current_frame = (pipeline->current_frame + 1) % YCBCR_BLIT_FRAME_COUNT;
+
+	// ALOGD("YCbCr blit: Submitted async conversion for %dx%d texture (frame %d).", p_width, p_height, frame_idx);
+	return true;
+}
+#endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 
 uint64_t RenderingDeviceDriverVulkan::texture_get_allocation_size(TextureID p_texture) {
 	const TextureInfo *tex_info = (const TextureInfo *)p_texture.id;
@@ -3974,14 +4752,26 @@ RDD::UniformSetID RenderingDeviceDriverVulkan::uniform_set_create(VectorView<Bou
 				VkDescriptorImageInfo *vk_img_infos = ALLOCA_ARRAY(VkDescriptorImageInfo, num_descriptors);
 
 				for (uint32_t j = 0; j < num_descriptors; j++) {
+					const TextureInfo *tex_info = (const TextureInfo *)uniform.ids[j * 2 + 1].id;
 #ifdef DEBUG_ENABLED
-					if (((const TextureInfo *)uniform.ids[j * 2 + 1].id)->transient) {
+					if (tex_info->transient) {
 						ERR_PRINT("TEXTURE_USAGE_TRANSIENT_BIT texture must not be used for sampling in a shader.");
 					}
 #endif
 					vk_img_infos[j] = {};
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+					// For textures with YCbCr conversion (e.g., AHardwareBuffer), use the texture's
+					// immutable sampler which has the YCbCr conversion attached.
+					if (tex_info->ycbcr_sampler != VK_NULL_HANDLE) {
+						vk_img_infos[j].sampler = tex_info->ycbcr_sampler;
+						ALOGD("uniform_set_create: SAMPLER_WITH_TEXTURE using YCbCr sampler (v4)");
+					} else {
+						vk_img_infos[j].sampler = (VkSampler)uniform.ids[j * 2 + 0].id;
+					}
+#else
 					vk_img_infos[j].sampler = (VkSampler)uniform.ids[j * 2 + 0].id;
-					vk_img_infos[j].imageView = ((const TextureInfo *)uniform.ids[j * 2 + 1].id)->vk_view;
+#endif
+					vk_img_infos[j].imageView = tex_info->vk_view;
 					vk_img_infos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				}
 
@@ -3993,13 +4783,20 @@ RDD::UniformSetID RenderingDeviceDriverVulkan::uniform_set_create(VectorView<Bou
 				VkDescriptorImageInfo *vk_img_infos = ALLOCA_ARRAY(VkDescriptorImageInfo, num_descriptors);
 
 				for (uint32_t j = 0; j < num_descriptors; j++) {
+					const TextureInfo *tex_info = (const TextureInfo *)uniform.ids[j].id;
 #ifdef DEBUG_ENABLED
-					if (((const TextureInfo *)uniform.ids[j].id)->transient) {
+					if (tex_info->transient) {
 						ERR_PRINT("TEXTURE_USAGE_TRANSIENT_BIT texture must not be used for sampling in a shader.");
 					}
 #endif
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+					// Log if this texture has a YCbCr sampler but is being bound without it
+					if (tex_info->ycbcr_sampler != VK_NULL_HANDLE) {
+						ALOGD("WARNING: UNIFORM_TYPE_TEXTURE used for YCbCr texture - sampler not applied!");
+					}
+#endif
 					vk_img_infos[j] = {};
-					vk_img_infos[j].imageView = ((const TextureInfo *)uniform.ids[j].id)->vk_view;
+					vk_img_infos[j].imageView = tex_info->vk_view;
 					vk_img_infos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				}
 
@@ -4011,13 +4808,19 @@ RDD::UniformSetID RenderingDeviceDriverVulkan::uniform_set_create(VectorView<Bou
 				VkDescriptorImageInfo *vk_img_infos = ALLOCA_ARRAY(VkDescriptorImageInfo, num_descriptors);
 
 				for (uint32_t j = 0; j < num_descriptors; j++) {
+					const TextureInfo *tex_info = (const TextureInfo *)uniform.ids[j].id;
 #ifdef DEBUG_ENABLED
-					if (((const TextureInfo *)uniform.ids[j].id)->transient) {
+					if (tex_info->transient) {
 						ERR_PRINT("TEXTURE_USAGE_TRANSIENT_BIT texture must not be used for sampling in a shader.");
 					}
 #endif
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+					if (tex_info->ycbcr_sampler != VK_NULL_HANDLE) {
+						ALOGD("WARNING: UNIFORM_TYPE_IMAGE used for YCbCr texture - sampler not applied!");
+					}
+#endif
 					vk_img_infos[j] = {};
-					vk_img_infos[j].imageView = ((const TextureInfo *)uniform.ids[j].id)->vk_view;
+					vk_img_infos[j].imageView = tex_info->vk_view;
 					vk_img_infos[j].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 				}
 
@@ -5980,6 +6783,16 @@ RenderingDeviceDriverVulkan::RenderingDeviceDriverVulkan(RenderingContextDriverV
 RenderingDeviceDriverVulkan::~RenderingDeviceDriverVulkan() {
 #if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
 	buffer_free(breadcrumb_buffer);
+#endif
+
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// Clean up YCbCr format cache (pipelines, samplers, conversions).
+	for (KeyValue<uint64_t, YcbcrFormatCache> &E : ycbcr_format_cache) {
+		_ycbcr_blit_pipeline_free(E.value.pipeline);
+		vkDestroySampler(vk_device, E.value.ycbcr_sampler, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER));
+		vkDestroySamplerYcbcrConversion(vk_device, E.value.ycbcr_conversion, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION));
+	}
+	ycbcr_format_cache.clear();
 #endif
 
 	while (small_allocs_pools.size()) {

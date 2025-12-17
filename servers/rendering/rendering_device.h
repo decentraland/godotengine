@@ -397,6 +397,14 @@ public:
 	RID texture_create(const TextureFormat &p_format, const TextureView &p_view, const Vector<Vector<uint8_t>> &p_data = Vector<Vector<uint8_t>>());
 	RID texture_create_shared(const TextureView &p_view, RID p_with_texture);
 	RID texture_create_from_extension(TextureType p_type, DataFormat p_format, TextureSamples p_samples, BitField<RenderingDevice::TextureUsageBits> p_usage, uint64_t p_image, uint64_t p_width, uint64_t p_height, uint64_t p_depth, uint64_t p_layers, uint64_t p_mipmaps = 1);
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// Create a texture from an Android hardware buffer (AHardwareBuffer*).
+	// Used for zero-copy video texture sharing from ExoPlayer.
+	RID texture_create_from_android_hardware_buffer(uint64_t p_hardware_buffer, uint32_t p_width, uint32_t p_height);
+	// Perform a YCbCr-to-RGBA blit using a pipeline with immutable YCbCr sampler.
+	// Returns true on success.
+	bool texture_ycbcr_blit(RID p_src_texture, RID p_dst_texture, uint32_t p_width, uint32_t p_height);
+#endif
 	RID texture_create_shared_from_slice(const TextureView &p_view, RID p_with_texture, uint32_t p_layer, uint32_t p_mipmap, uint32_t p_mipmaps = 1, TextureSliceType p_slice_type = TEXTURE_SLICE_2D, uint32_t p_layers = 0);
 	Error texture_update(RID p_texture, uint32_t p_layer, const Vector<uint8_t> &p_data);
 	Vector<uint8_t> texture_get_data(RID p_texture, uint32_t p_layer); // CPU textures will return immediately, while GPU textures will most likely force a flush
