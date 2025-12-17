@@ -237,6 +237,7 @@ def configure(env: "SConsEnvironment"):
 
     if env["vulkan"]:
         env.Append(CPPDEFINES=["VULKAN_ENABLED", "RD_ENABLED"])
+        env.Append(CPPDEFINES=["ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT"])
         if has_swappy:
             env.Append(CPPDEFINES=["SWAPPY_FRAME_PACING_ENABLED"])
             env.Append(LIBS=["swappy_static"])
