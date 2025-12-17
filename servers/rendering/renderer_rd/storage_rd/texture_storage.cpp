@@ -1502,6 +1502,18 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 
 	// Fallback: If no external buffer or creation failed, create/recreate placeholder texture.
+#ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+	// When the external buffer is cleared (p_external_buffer == 0), reset the flag so that
+	// the next hardware buffer will be treated as the first one. This ensures the destination
+	// texture is recreated with STORAGE_BIT after surface reinitialization (e.g., video
+	// resolution change). Without this, the placeholder texture (without STORAGE_BIT) would
+	// be reused, causing the YCbCr compute shader blit to fail.
+	if (p_external_buffer == 0 && tex->has_received_hardware_buffer) {
+		tex->has_received_hardware_buffer = false;
+		print_verbose(vformat("texture_external_update: reset has_received_hardware_buffer for %dx%d (surface reinitialization)", p_width, p_height));
+	}
+#endif
+
 	if (tex->rd_texture.is_valid()) {
 		RD::get_singleton()->free(tex->rd_texture);
 	}
