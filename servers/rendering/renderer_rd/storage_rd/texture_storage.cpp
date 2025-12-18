@@ -1571,6 +1571,48 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 	}
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+#define IOS_TEXTURE_STORAGE_VERSION "1.0.2"
+	if (p_external_buffer != 0) {
+		// For iOS, create a texture directly from IOSurface (BGRA format).
+		// No YCbCr conversion needed since AVPlayer outputs BGRA.
+
+		static bool first_call = true;
+		if (first_call) {
+			print_line(vformat("[TextureStorage iOS v%s] texture_external_update called with IOSurface", IOS_TEXTURE_STORAGE_VERSION));
+			first_call = false;
+		}
+
+		// Free the old texture if it exists and dimensions changed.
+		if (tex->rd_texture.is_valid()) {
+			Vector2i current_size = RD::get_singleton()->texture_size(tex->rd_texture);
+			if (current_size.x != p_width || current_size.y != p_height) {
+				RD::get_singleton()->free(tex->rd_texture);
+				tex->rd_texture = RID();
+			}
+		}
+
+		// Create texture from IOSurface.
+		RID ios_texture = RD::get_singleton()->texture_create_from_iosurface(
+				p_external_buffer, p_width, p_height);
+
+		if (ios_texture.is_valid()) {
+			// Free old texture if we have one (different IOSurface).
+			if (tex->rd_texture.is_valid()) {
+				RD::get_singleton()->free(tex->rd_texture);
+			}
+			tex->rd_texture = ios_texture;
+			return;
+		} else {
+			static bool first_error = true;
+			if (first_error) {
+				print_line(vformat("[TextureStorage iOS v%s] ERROR: texture_create_from_iosurface returned invalid RID", IOS_TEXTURE_STORAGE_VERSION));
+				first_error = false;
+			}
+		}
+	}
+#endif // IOS_EXTERNAL_TEXTURE_SUPPORT
+
 	// Fallback: If no external buffer or creation failed, create/recreate placeholder texture.
 #ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 	// When the external buffer is cleared (p_external_buffer == 0), reset the flag so that

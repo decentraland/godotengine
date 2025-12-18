@@ -1307,6 +1307,47 @@ bool RenderingDevice::texture_ycbcr_blit(RID p_src_texture, RID p_dst_texture, u
 }
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+RID RenderingDevice::texture_create_from_iosurface(uint64_t p_iosurface, uint32_t p_width, uint32_t p_height) {
+	// This method creates a texture from an iOS IOSurface (IOSurfaceRef*).
+	// Used for zero-copy video texture sharing from AVPlayer.
+
+	ERR_FAIL_COND_V(p_iosurface == 0, RID());
+
+	Texture texture;
+	texture.type = TEXTURE_TYPE_2D;
+	// IOSurface from AVPlayer uses BGRA format, exposed as RGBA for shader sampling.
+	texture.format = DATA_FORMAT_B8G8R8A8_UNORM;
+	texture.samples = TEXTURE_SAMPLES_1;
+	texture.width = p_width;
+	texture.height = p_height;
+	texture.depth = 1;
+	texture.layers = 1;
+	texture.mipmaps = 1;
+	texture.usage_flags = TEXTURE_USAGE_SAMPLING_BIT;
+	texture.base_mipmap = 0;
+	texture.base_layer = 0;
+	texture.allowed_shared_formats.push_back(DATA_FORMAT_B8G8R8A8_UNORM);
+	texture.allowed_shared_formats.push_back(DATA_FORMAT_B8G8R8A8_SRGB);
+
+	texture.read_aspect_flags.set_flag(RDD::TEXTURE_ASPECT_COLOR_BIT);
+	texture.barrier_aspect_flags.set_flag(RDD::TEXTURE_ASPECT_COLOR_BIT);
+
+	texture.driver_id = driver->texture_create_from_iosurface(
+			reinterpret_cast<void *>(p_iosurface), p_width, p_height);
+	ERR_FAIL_COND_V(!texture.driver_id, RID());
+
+	_texture_make_mutable(&texture, RID());
+
+	RID id = texture_owner.make_rid(texture);
+#ifdef DEV_ENABLED
+	set_resource_name(id, "RID:" + itos(id.get_id()));
+#endif
+
+	return id;
+}
+#endif // IOS_EXTERNAL_TEXTURE_SUPPORT
+
 RID RenderingDevice::texture_create_shared_from_slice(const TextureView &p_view, RID p_with_texture, uint32_t p_layer, uint32_t p_mipmap, uint32_t p_mipmaps, TextureSliceType p_slice_type, uint32_t p_layers) {
 	Texture *src_texture = texture_owner.get_or_null(p_with_texture);
 	ERR_FAIL_NULL_V(src_texture, RID());

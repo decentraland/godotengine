@@ -156,12 +156,13 @@ def configure(env: "SConsEnvironment"):
         env["metal"] = False
 
     if env["metal"]:
-        env.AppendUnique(CPPDEFINES=["METAL_ENABLED", "RD_ENABLED"])
+        env.AppendUnique(CPPDEFINES=["METAL_ENABLED", "RD_ENABLED", "IOS_EXTERNAL_TEXTURE_SUPPORT"])
         env.Prepend(
             CPPPATH=[
                 "$APPLE_SDK_PATH/System/Library/Frameworks/Metal.framework/Headers",
                 "$APPLE_SDK_PATH/System/Library/Frameworks/MetalFX.framework/Headers",
                 "$APPLE_SDK_PATH/System/Library/Frameworks/QuartzCore.framework/Headers",
+                "$APPLE_SDK_PATH/System/Library/Frameworks/IOSurface.framework/Headers",
             ]
         )
         env.Prepend(CPPPATH=["#thirdparty/spirv-cross"])

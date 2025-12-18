@@ -583,6 +583,11 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME, false);
 #endif
 
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+	// MoltenVK Metal objects extension for IOSurface/Metal texture import (video playback, etc.)
+	_register_requested_device_extension(VK_EXT_METAL_OBJECTS_EXTENSION_NAME, false);
+#endif
+
 	if (Engine::get_singleton()->is_generate_spirv_debug_info_enabled()) {
 		_register_requested_device_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, true);
 	}
@@ -2487,6 +2492,171 @@ RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_android_hardware
 }
 
 #endif // ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
+
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+#include <IOSurface/IOSurfaceRef.h>
+
+#define VULKAN_IOSURFACE_VERSION "1.0.4"
+
+// Helper function from vulkan_iosurface_helper_ios.mm
+extern "C" void *godot_create_metal_texture_from_iosurface(void *p_mtl_device, void *p_iosurface);
+extern "C" void godot_release_metal_texture(void *p_texture);
+
+RDD::TextureID RenderingDeviceDriverVulkan::texture_create_from_iosurface(void *p_iosurface, uint32_t p_width, uint32_t p_height) {
+	// Create a Vulkan texture from IOSurface using VK_EXT_metal_objects.
+	// We first create a Metal texture with correct storage mode, then import it.
+	ERR_FAIL_NULL_V(p_iosurface, TextureID());
+
+	IOSurfaceRef surface = (IOSurfaceRef)p_iosurface;
+
+	// Get actual dimensions from IOSurface
+	size_t width = IOSurfaceGetWidth(surface);
+	size_t height = IOSurfaceGetHeight(surface);
+	if (width == 0) {
+		width = p_width;
+	}
+	if (height == 0) {
+		height = p_height;
+	}
+
+	static bool first_log = true;
+	if (first_log) {
+		print_line(vformat("[Vulkan IOSurface v%s] texture_create_from_iosurface: %dx%d", VULKAN_IOSURFACE_VERSION, (int)width, (int)height));
+		first_log = false;
+	}
+
+	// Check if VK_EXT_metal_objects extension is available
+	if (!enabled_device_extension_names.has(VK_EXT_METAL_OBJECTS_EXTENSION_NAME)) {
+		static bool first_error = true;
+		if (first_error) {
+			print_line("[Vulkan IOSurface] VK_EXT_metal_objects not available. Use Metal rendering backend.");
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	// Get MTLDevice from MoltenVK
+	VkExportMetalObjectsInfoEXT export_info = {};
+	export_info.sType = VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECTS_INFO_EXT;
+
+	VkExportMetalDeviceInfoEXT device_info = {};
+	device_info.sType = VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT;
+	export_info.pNext = &device_info;
+
+	PFN_vkExportMetalObjectsEXT vkExportMetalObjectsEXT =
+			(PFN_vkExportMetalObjectsEXT)vkGetDeviceProcAddr(vk_device, "vkExportMetalObjectsEXT");
+	if (!vkExportMetalObjectsEXT) {
+		static bool first_error = true;
+		if (first_error) {
+			print_line("[Vulkan IOSurface] vkExportMetalObjectsEXT not available.");
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	vkExportMetalObjectsEXT(vk_device, &export_info);
+	void *mtl_device = device_info.mtlDevice;
+	if (!mtl_device) {
+		static bool first_error = true;
+		if (first_error) {
+			print_line("[Vulkan IOSurface] Failed to get MTLDevice from MoltenVK.");
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	// Create Metal texture from IOSurface with correct storage mode (MTLStorageModeShared)
+	void *mtl_texture = godot_create_metal_texture_from_iosurface(mtl_device, p_iosurface);
+	if (!mtl_texture) {
+		static bool first_error = true;
+		if (first_error) {
+			print_line("[Vulkan IOSurface] Failed to create Metal texture from IOSurface.");
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	// Import the Metal texture into Vulkan using VK_EXT_metal_objects
+	VkImportMetalTextureInfoEXT import_texture_info = {};
+	import_texture_info.sType = VK_STRUCTURE_TYPE_IMPORT_METAL_TEXTURE_INFO_EXT;
+	import_texture_info.plane = VK_IMAGE_ASPECT_PLANE_0_BIT;
+	import_texture_info.mtlTexture = (MTLTexture_id)mtl_texture;
+
+	VkImageCreateInfo image_create_info = {};
+	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_create_info.pNext = &import_texture_info;
+	image_create_info.imageType = VK_IMAGE_TYPE_2D;
+	image_create_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	image_create_info.extent.width = (uint32_t)width;
+	image_create_info.extent.height = (uint32_t)height;
+	image_create_info.extent.depth = 1;
+	image_create_info.mipLevels = 1;
+	image_create_info.arrayLayers = 1;
+	image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	VkImage vk_image = VK_NULL_HANDLE;
+	VkResult err = vkCreateImage(vk_device, &image_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE), &vk_image);
+	if (err != VK_SUCCESS) {
+		godot_release_metal_texture(mtl_texture);
+		static bool first_error = true;
+		if (first_error) {
+			print_line(vformat("[Vulkan IOSurface] vkCreateImage failed with error %d", err));
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	// Create image view
+	VkImageViewCreateInfo image_view_create_info = {};
+	image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	image_view_create_info.image = vk_image;
+	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	image_view_create_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	image_view_create_info.subresourceRange.baseMipLevel = 0;
+	image_view_create_info.subresourceRange.levelCount = 1;
+	image_view_create_info.subresourceRange.baseArrayLayer = 0;
+	image_view_create_info.subresourceRange.layerCount = 1;
+
+	VkImageView vk_image_view = VK_NULL_HANDLE;
+	err = vkCreateImageView(vk_device, &image_view_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE_VIEW), &vk_image_view);
+	if (err != VK_SUCCESS) {
+		vkDestroyImage(vk_device, vk_image, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_IMAGE));
+		godot_release_metal_texture(mtl_texture);
+		static bool first_error = true;
+		if (first_error) {
+			print_line(vformat("[Vulkan IOSurface] vkCreateImageView failed with error %d", err));
+			first_error = false;
+		}
+		return TextureID();
+	}
+
+	// Note: We intentionally don't release mtl_texture here - MoltenVK retains it internally.
+	// The Metal texture will be released when the VkImage is destroyed.
+
+	// Bookkeep
+	TextureInfo *tex_info = VersatileResource::allocate<TextureInfo>(resources_allocator);
+	tex_info->vk_image = vk_image;
+	tex_info->vk_view = vk_image_view;
+	tex_info->rd_format = DATA_FORMAT_B8G8R8A8_UNORM;
+	tex_info->vk_create_info = image_create_info;
+	tex_info->vk_view_create_info = image_view_create_info;
+#ifdef DEBUG_ENABLED
+	tex_info->created_from_extension = true;
+#endif
+
+	return TextureID(tex_info);
+}
+
+#endif // IOS_EXTERNAL_TEXTURE_SUPPORT
 
 RDD::TextureID RenderingDeviceDriverVulkan::texture_create_shared(TextureID p_original_texture, const TextureView &p_view) {
 	const TextureInfo *owner_tex_info = (const TextureInfo *)p_original_texture.id;

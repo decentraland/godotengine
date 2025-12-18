@@ -61,6 +61,10 @@
 
 #import <Metal/MTLTexture.h>
 #import <Metal/Metal.h>
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+#import <IOSurface/IOSurfaceRef.h>
+#import <CoreVideo/CVPixelBuffer.h>
+#endif
 #import <os/log.h>
 #import <os/signpost.h>
 #include <algorithm>
@@ -442,6 +446,64 @@ RDD::TextureID RenderingDeviceDriverMetal::texture_create_from_extension(uint64_
 
 	return rid::make(res);
 }
+
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+#define METAL_IOSURFACE_VERSION "1.0.2"
+RDD::TextureID RenderingDeviceDriverMetal::texture_create_from_iosurface(void *p_iosurface, uint32_t p_width, uint32_t p_height) {
+	// Create a Metal texture backed by an IOSurface for zero-copy video frame access.
+	// The IOSurface is expected to be in BGRA format from AVPlayer.
+	IOSurfaceRef surface = (IOSurfaceRef)p_iosurface;
+	ERR_FAIL_NULL_V_MSG(surface, TextureID(), "Invalid IOSurface");
+
+	// Get actual dimensions from IOSurface
+	size_t width = IOSurfaceGetWidth(surface);
+	size_t height = IOSurfaceGetHeight(surface);
+	OSType ioFormat = IOSurfaceGetPixelFormat(surface);
+
+	// Debug logging
+	static bool first_log = true;
+	if (first_log) {
+		NSLog(@"[Metal IOSurface v%s] texture_create_from_iosurface: IOSurface=%p, size=%zux%zu, format=%c%c%c%c",
+			  METAL_IOSURFACE_VERSION, surface, width, height,
+			  (char)(ioFormat >> 24), (char)(ioFormat >> 16),
+			  (char)(ioFormat >> 8), (char)(ioFormat));
+		first_log = false;
+	}
+
+	if (width == 0) {
+		width = p_width;
+	}
+	if (height == 0) {
+		height = p_height;
+	}
+
+	// Determine Metal pixel format based on IOSurface format
+	MTLPixelFormat metalFormat = MTLPixelFormatBGRA8Unorm;
+	if (ioFormat == 'BGRA' || ioFormat == kCVPixelFormatType_32BGRA) {
+		metalFormat = MTLPixelFormatBGRA8Unorm;
+	} else if (ioFormat == 'RGBA' || ioFormat == kCVPixelFormatType_32RGBA) {
+		metalFormat = MTLPixelFormatRGBA8Unorm;
+	}
+
+	// Create texture descriptor
+	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:metalFormat
+																					width:width
+																				   height:height
+																				mipmapped:NO];
+	desc.usage = MTLTextureUsageShaderRead;
+	// IOSurface textures MUST use MTLStorageModeShared
+	desc.storageMode = MTLStorageModeShared;
+
+	// Create texture from IOSurface
+	id<MTLTexture> obj = [device newTextureWithDescriptor:desc iosurface:surface plane:0];
+	if (!obj) {
+		NSLog(@"[Metal] ERROR: Failed to create texture from IOSurface %p", surface);
+		ERR_FAIL_V_MSG(TextureID(), "Failed to create Metal texture from IOSurface");
+	}
+
+	return rid::make(obj);
+}
+#endif // IOS_EXTERNAL_TEXTURE_SUPPORT
 
 RDD::TextureID RenderingDeviceDriverMetal::texture_create_shared(TextureID p_original_texture, const TextureView &p_view) {
 	id<MTLTexture> src_texture = rid::get(p_original_texture);

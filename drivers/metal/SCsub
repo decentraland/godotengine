@@ -5,6 +5,13 @@ Import("env")
 
 env_metal = env.Clone()
 
+# Enable IOSurface texture support for iOS (for AVPlayer/ExternalTexture integration)
+if env["platform"] == "ios":
+    env_metal.Append(CPPDEFINES=["IOS_EXTERNAL_TEXTURE_SUPPORT"])
+    env_metal.Append(CXXFLAGS=["-DIOS_EXTERNAL_TEXTURE_SUPPORT"])
+    if env.get("IOS_SDK_PATH"):
+        env_metal.Prepend(CPPPATH=["$IOS_SDK_PATH/System/Library/Frameworks/IOSurface.framework/Headers"])
+
 # Thirdparty source files
 
 thirdparty_obj = []
