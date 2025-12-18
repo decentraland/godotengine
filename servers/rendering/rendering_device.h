@@ -405,6 +405,12 @@ public:
 	// Returns true on success.
 	bool texture_ycbcr_blit(RID p_src_texture, RID p_dst_texture, uint32_t p_width, uint32_t p_height);
 #endif
+#ifdef IOS_EXTERNAL_TEXTURE_SUPPORT
+	// Create a texture from an iOS IOSurface (IOSurfaceRef cast to uint64_t).
+	// Used for zero-copy video texture sharing from AVPlayer.
+	// The IOSurface should be BGRA format for direct use.
+	RID texture_create_from_iosurface(uint64_t p_iosurface, uint32_t p_width, uint32_t p_height);
+#endif
 	RID texture_create_shared_from_slice(const TextureView &p_view, RID p_with_texture, uint32_t p_layer, uint32_t p_mipmap, uint32_t p_mipmaps = 1, TextureSliceType p_slice_type = TEXTURE_SLICE_2D, uint32_t p_layers = 0);
 	Error texture_update(RID p_texture, uint32_t p_layer, const Vector<uint8_t> &p_data);
 	Vector<uint8_t> texture_get_data(RID p_texture, uint32_t p_layer); // CPU textures will return immediately, while GPU textures will most likely force a flush
