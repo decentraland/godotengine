@@ -15,7 +15,6 @@ on:
 # Global Settings
 env:
   GODOT_VERSION: 4.5.1.stable
-  TEMPLATE_FILE_NAME: Godot_v4.5.1-stable_export_templates.tpz
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
@@ -133,9 +132,6 @@ jobs:
           mv artifacts/windows-template-debug/windows_debug_x86_64.exe templates/
           mv artifacts/windows-template-release/windows_release_x86_64.exe templates/
 
-      - name: Compress templates
-        run: zip -q -9 -r -D "${{ env.TEMPLATE_FILE_NAME }}" templates/*
-
       - name: Compress individual files
         run: |
           mkdir -p compressed-templates/
@@ -149,14 +145,6 @@ jobs:
               fi
           done
 
-
-      - name: Upload main template to R2
-        env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          aws s3 cp "${{ env.TEMPLATE_FILE_NAME }}" "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/${{ env.TEMPLATE_FILE_NAME }}" --endpoint-url "${R2_ENDPOINT}"
-          echo "✓ Uploaded main template: ${{ env.TEMPLATE_FILE_NAME }}"
 
       - name: Upload editors to R2
         env:
@@ -173,3 +161,13 @@ jobs:
         run: |
           aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
           echo "✓ Uploaded compressed templates to: ${{ env.GODOT_VERSION }}/compressed-templates/"
+
+      - name: Cleanup temporary artifacts from R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          RUN_ID="${{ github.run_id }}"
+          echo "Cleaning up temporary artifacts for run ${RUN_ID}..."
+          aws s3 rm "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Cleaned up artifacts/${RUN_ID}/"
