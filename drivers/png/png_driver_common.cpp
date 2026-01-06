@@ -36,6 +36,22 @@
 
 namespace PNGDriverCommon {
 
+struct PNGReadContext {
+	const uint8_t *data;
+	size_t size;
+	size_t offset;
+};
+
+static void png_read_from_mem(png_structp png_ptr, png_bytep out_data, png_size_t length) {
+	PNGReadContext *ctx = (PNGReadContext *)png_get_io_ptr(png_ptr);
+	if (ctx->offset + length > ctx->size) {
+		png_error(png_ptr, "Read past end of PNG data");
+		return;
+	}
+	memcpy(out_data, ctx->data + ctx->offset, length);
+	ctx->offset += length;
+}
+
 // Print any warnings.
 // On error, set explain and return true.
 // Call should be wrapped in ERR_FAIL_COND
@@ -57,7 +73,90 @@ static bool check_error(const png_image &image) {
 	return false;
 }
 
-Error png_to_image(const uint8_t *p_source, size_t p_size, bool p_force_linear, Ref<Image> p_image) {
+Error png_to_image(const uint8_t *p_source, size_t p_size, bool p_force_linear, Ref<Image> p_image, bool p_ignore_gamma) {
+	if (p_ignore_gamma) {
+		// Use low-level libpng API to load without gamma correction.
+		png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+		ERR_FAIL_NULL_V(png_ptr, ERR_OUT_OF_MEMORY);
+
+		png_infop info_ptr = png_create_info_struct(png_ptr);
+		if (!info_ptr) {
+			png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+			ERR_FAIL_V(ERR_OUT_OF_MEMORY);
+		}
+
+		if (setjmp(png_jmpbuf(png_ptr))) {
+			png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+			ERR_FAIL_V(ERR_FILE_CORRUPT);
+		}
+
+		PNGReadContext ctx = { p_source, p_size, 0 };
+		png_set_read_fn(png_ptr, &ctx, png_read_from_mem);
+		png_read_info(png_ptr, info_ptr);
+
+		png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
+		png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
+		png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+		png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+		if (bit_depth == 16) {
+			png_set_strip_16(png_ptr);
+		}
+		if (color_type == PNG_COLOR_TYPE_PALETTE) {
+			png_set_palette_to_rgb(png_ptr);
+		}
+		if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
+			png_set_expand_gray_1_2_4_to_8(png_ptr);
+		}
+		if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
+			png_set_tRNS_to_alpha(png_ptr);
+		}
+
+		png_read_update_info(png_ptr, info_ptr);
+
+		color_type = png_get_color_type(png_ptr, info_ptr);
+		int channels = png_get_channels(png_ptr, info_ptr);
+
+		Image::Format dest_format;
+		switch (color_type) {
+			case PNG_COLOR_TYPE_GRAY:
+				dest_format = Image::FORMAT_L8;
+				break;
+			case PNG_COLOR_TYPE_GRAY_ALPHA:
+				dest_format = Image::FORMAT_LA8;
+				break;
+			case PNG_COLOR_TYPE_RGB:
+				dest_format = Image::FORMAT_RGB8;
+				break;
+			case PNG_COLOR_TYPE_RGBA:
+				dest_format = Image::FORMAT_RGBA8;
+				break;
+			default:
+				png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+				ERR_FAIL_V_MSG(ERR_UNAVAILABLE, "Unsupported PNG color type.");
+		}
+
+		Vector<uint8_t> buffer;
+		Error err = buffer.resize(width * height * channels);
+		if (err) {
+			png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+			return err;
+		}
+
+		Vector<png_bytep> row_pointers;
+		row_pointers.resize(height);
+		uint8_t *buffer_ptr = buffer.ptrw();
+		for (png_uint_32 y = 0; y < height; y++) {
+			row_pointers.write[y] = buffer_ptr + y * width * channels;
+		}
+
+		png_read_image(png_ptr, row_pointers.ptrw());
+		png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+
+		p_image->set_data(width, height, false, dest_format, buffer);
+		return OK;
+	}
+
 	png_image png_img;
 	memset(&png_img, 0, sizeof(png_img));
 	png_img.version = PNG_IMAGE_VERSION;
