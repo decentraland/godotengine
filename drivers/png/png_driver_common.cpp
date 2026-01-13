@@ -73,52 +73,94 @@ static bool check_error(const png_image &image) {
 	return false;
 }
 
+// Internal structure for passing image info from low-level PNG reading.
+struct PNGImageInfo {
+	png_uint_32 width;
+	png_uint_32 height;
+	png_byte color_type;
+	int channels;
+};
+
+// Low-level PNG read function that uses setjmp for error handling.
+// MSVC warning C4611 is disabled here because this function only uses POD types,
+// so there are no C++ destructors that could be affected by longjmp.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4611)
+#endif
+static Error png_read_image_no_gamma(const uint8_t *p_source, size_t p_size, PNGImageInfo &r_info, uint8_t *p_buffer) {
+	png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+	ERR_FAIL_NULL_V(png_ptr, ERR_OUT_OF_MEMORY);
+
+	png_infop info_ptr = png_create_info_struct(png_ptr);
+	if (!info_ptr) {
+		png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+		ERR_FAIL_V(ERR_OUT_OF_MEMORY);
+	}
+
+	if (setjmp(png_jmpbuf(png_ptr))) {
+		png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+		ERR_FAIL_V(ERR_FILE_CORRUPT);
+	}
+
+	PNGReadContext ctx = { p_source, p_size, 0 };
+	png_set_read_fn(png_ptr, &ctx, png_read_from_mem);
+	png_read_info(png_ptr, info_ptr);
+
+	png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
+	png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
+	png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+	png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+	if (bit_depth == 16) {
+		png_set_strip_16(png_ptr);
+	}
+	if (color_type == PNG_COLOR_TYPE_PALETTE) {
+		png_set_palette_to_rgb(png_ptr);
+	}
+	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
+		png_set_expand_gray_1_2_4_to_8(png_ptr);
+	}
+	if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
+		png_set_tRNS_to_alpha(png_ptr);
+	}
+
+	png_read_update_info(png_ptr, info_ptr);
+
+	color_type = png_get_color_type(png_ptr, info_ptr);
+	int channels = png_get_channels(png_ptr, info_ptr);
+
+	r_info.width = width;
+	r_info.height = height;
+	r_info.color_type = color_type;
+	r_info.channels = channels;
+
+	if (p_buffer) {
+		png_bytep *row_pointers = (png_bytep *)memalloc(height * sizeof(png_bytep));
+		for (png_uint_32 y = 0; y < height; y++) {
+			row_pointers[y] = p_buffer + y * width * channels;
+		}
+		png_read_image(png_ptr, row_pointers);
+		memfree(row_pointers);
+	}
+
+	png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+	return OK;
+}
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 Error png_to_image(const uint8_t *p_source, size_t p_size, bool p_force_linear, Ref<Image> p_image, bool p_ignore_gamma) {
 	if (p_ignore_gamma) {
 		// Use low-level libpng API to load without gamma correction.
-		png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-		ERR_FAIL_NULL_V(png_ptr, ERR_OUT_OF_MEMORY);
-
-		png_infop info_ptr = png_create_info_struct(png_ptr);
-		if (!info_ptr) {
-			png_destroy_read_struct(&png_ptr, nullptr, nullptr);
-			ERR_FAIL_V(ERR_OUT_OF_MEMORY);
-		}
-
-		if (setjmp(png_jmpbuf(png_ptr))) {
-			png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-			ERR_FAIL_V(ERR_FILE_CORRUPT);
-		}
-
-		PNGReadContext ctx = { p_source, p_size, 0 };
-		png_set_read_fn(png_ptr, &ctx, png_read_from_mem);
-		png_read_info(png_ptr, info_ptr);
-
-		png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
-		png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
-		png_byte color_type = png_get_color_type(png_ptr, info_ptr);
-		png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
-
-		if (bit_depth == 16) {
-			png_set_strip_16(png_ptr);
-		}
-		if (color_type == PNG_COLOR_TYPE_PALETTE) {
-			png_set_palette_to_rgb(png_ptr);
-		}
-		if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
-			png_set_expand_gray_1_2_4_to_8(png_ptr);
-		}
-		if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
-			png_set_tRNS_to_alpha(png_ptr);
-		}
-
-		png_read_update_info(png_ptr, info_ptr);
-
-		color_type = png_get_color_type(png_ptr, info_ptr);
-		int channels = png_get_channels(png_ptr, info_ptr);
+		// First pass: get image info.
+		PNGImageInfo info;
+		Error err = png_read_image_no_gamma(p_source, p_size, info, nullptr);
+		ERR_FAIL_COND_V(err != OK, err);
 
 		Image::Format dest_format;
-		switch (color_type) {
+		switch (info.color_type) {
 			case PNG_COLOR_TYPE_GRAY:
 				dest_format = Image::FORMAT_L8;
 				break;
@@ -132,28 +174,18 @@ Error png_to_image(const uint8_t *p_source, size_t p_size, bool p_force_linear, 
 				dest_format = Image::FORMAT_RGBA8;
 				break;
 			default:
-				png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
 				ERR_FAIL_V_MSG(ERR_UNAVAILABLE, "Unsupported PNG color type.");
 		}
 
 		Vector<uint8_t> buffer;
-		Error err = buffer.resize(width * height * channels);
-		if (err) {
-			png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-			return err;
-		}
+		err = buffer.resize(info.width * info.height * info.channels);
+		ERR_FAIL_COND_V(err != OK, err);
 
-		Vector<png_bytep> row_pointers;
-		row_pointers.resize(height);
-		uint8_t *buffer_ptr = buffer.ptrw();
-		for (png_uint_32 y = 0; y < height; y++) {
-			row_pointers.write[y] = buffer_ptr + y * width * channels;
-		}
+		// Second pass: read actual image data.
+		err = png_read_image_no_gamma(p_source, p_size, info, buffer.ptrw());
+		ERR_FAIL_COND_V(err != OK, err);
 
-		png_read_image(png_ptr, row_pointers.ptrw());
-		png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-
-		p_image->set_data(width, height, false, dest_format, buffer);
+		p_image->set_data(info.width, info.height, false, dest_format, buffer);
 		return OK;
 	}
 
