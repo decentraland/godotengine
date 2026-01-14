@@ -1,0 +1,42 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "PNG gamma test"
+  },
+  "scene": 0,
+  "scenes": [{ "nodes": [0, 1] }],
+  "nodes": [
+    { "mesh": 0, "translation": [-1, 0, 0], "name": "Cube_NoGamma" },
+    { "mesh": 1, "translation": [1, 0, 0], "name": "Cube_WithGamma" }
+  ],
+  "meshes": [
+    { "name": "Cube_NoGamma", "primitives": [{ "attributes": { "POSITION": 0 }, "material": 0 }] },
+    { "name": "Cube_WithGamma", "primitives": [{ "attributes": { "POSITION": 0 }, "material": 1 }] }
+  ],
+  "materials": [
+    { "name": "Material_NoGamma", "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 }, "metallicFactor": 0, "roughnessFactor": 1 } },
+    { "name": "Material_WithGamma", "pbrMetallicRoughness": { "baseColorTexture": { "index": 1 }, "metallicFactor": 0, "roughnessFactor": 1 } }
+  ],
+  "textures": [
+    { "source": 0, "sampler": 0 },
+    { "source": 1, "sampler": 0 }
+  ],
+  "images": [
+    { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNg6GAAAAEUAIkxMGk9AAAAAElFTkSuQmCC" },
+    { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAABGdBTUEAAE4g3rEiDgAAAAxJREFUeJxjYOhgAAABFACJMTBpPQAAAABJRU5ErkJggg==" }
+  ],
+  "samplers": [{ "magFilter": 9729, "minFilter": 9729 }],
+  "buffers": [{
+    "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAA",
+    "byteLength": 36
+  }],
+  "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962 }],
+  "accessors": [{
+    "bufferView": 0,
+    "componentType": 5126,
+    "count": 3,
+    "type": "VEC3",
+    "min": [-0.5, -0.5, 0],
+    "max": [0.5, 0.5, 0]
+  }]
+}

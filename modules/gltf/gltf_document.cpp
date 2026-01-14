@@ -58,6 +58,8 @@
 #include "scene/resources/portable_compressed_texture.h"
 #include "scene/resources/surface_tool.h"
 
+#include "drivers/png/png_driver_common.h"
+
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_file_system.h"
 #endif
@@ -4002,10 +4004,11 @@ Ref<Image> GLTFDocument::_parse_image_bytes_into_image(Ref<GLTFState> p_state, c
 	}
 	// If no extension wanted to import this data as an image, try to load a PNG or JPEG.
 	// First we honor the mime types if they were defined.
-	if (p_mime_type == "image/png") { // Load buffer as PNG.
-		r_image->load_png_from_buffer(p_bytes);
+	if (p_mime_type == "image/png") {
+		// Per glTF 2.0 spec, PNG colorspace metadata (including gamma) MUST be ignored.
+		PNGDriverCommon::png_to_image(p_bytes.ptr(), p_bytes.size(), false, r_image, true);
 		r_file_extension = ".png";
-	} else if (p_mime_type == "image/jpeg") { // Loader buffer as JPEG.
+	} else if (p_mime_type == "image/jpeg") {
 		r_image->load_jpg_from_buffer(p_bytes);
 		r_file_extension = ".jpg";
 	}
@@ -4015,8 +4018,9 @@ Ref<Image> GLTFDocument::_parse_image_bytes_into_image(Ref<GLTFState> p_state, c
 	// (e.g. `image/jpeg` but the data is actually PNG).
 	// That's not *exactly* what the spec mandates but this lets us be
 	// lenient with bogus glb files which do exist in production.
-	if (r_image->is_empty()) { // Try PNG first.
-		r_image->load_png_from_buffer(p_bytes);
+	if (r_image->is_empty()) {
+		// Per glTF 2.0 spec, PNG colorspace metadata (including gamma) MUST be ignored.
+		PNGDriverCommon::png_to_image(p_bytes.ptr(), p_bytes.size(), false, r_image, true);
 	}
 	if (r_image->is_empty()) { // And then JPEG.
 		r_image->load_jpg_from_buffer(p_bytes);
@@ -4054,6 +4058,17 @@ void GLTFDocument::_parse_image_save_image(Ref<GLTFState> p_state, const Vector<
 			// If resource_uri is within res:// folder but outside of .godot/imported folder, use it.
 			if (!p_resource_uri.is_empty() && !p_resource_uri.begins_with("res://.godot/imported") && !p_resource_uri.begins_with("res://..")) {
 				file_path = p_resource_uri;
+				// For external PNG files that already exist, use the in-memory image directly
+				// to preserve glTF spec compliance (ignoring colorspace metadata).
+				// Reimporting would load the file again and apply gamma correction.
+				if (p_file_extension == ".png" && FileAccess::exists(file_path)) {
+					Ref<ImageTexture> tex;
+					tex.instantiate();
+					tex->set_image(p_image);
+					p_state->images.push_back(tex);
+					p_state->source_images.push_back(p_image);
+					return;
+				}
 				must_import = true;
 				must_write = !FileAccess::exists(file_path);
 			} else {
@@ -4091,8 +4106,13 @@ void GLTFDocument::_parse_image_save_image(Ref<GLTFState> p_state, const Vector<
 					// If a file extension was not specified, save the image data to a PNG file.
 					err = p_image->save_png(file_path);
 					ERR_FAIL_COND(err != OK);
+				} else if (p_file_extension == ".png" && p_resource_uri.is_empty()) {
+					// For embedded PNG data (data URI or bufferView), save processed image
+					// to strip colorspace metadata (gAMA, etc.) per glTF 2.0 spec.
+					err = p_image->save_png(file_path);
+					ERR_FAIL_COND(err != OK);
 				} else {
-					// If a file extension was specified, save the original bytes to a file with that extension.
+					// For external files, preserve original bytes.
 					Ref<FileAccess> file = FileAccess::open(file_path, FileAccess::WRITE, &err);
 					ERR_FAIL_COND(err != OK);
 					file->store_buffer(p_bytes);
@@ -4208,7 +4228,17 @@ Error GLTFDocument::_parse_images(Ref<GLTFState> p_state, const String &p_base_p
 				// there could be a `.png` image which is actually JPEG), but there's no easy
 				// API for that in Godot, so we'd have to load as a buffer (i.e. embedded in
 				// the material), so we only do that only as fallback.
-				if (ResourceLoader::exists(resource_uri)) {
+				// mimeType is optional, but if we have it in the file extension, let's use it.
+				// If the mimeType does not match with the file extension, either it should be
+				// specified in the file, or the GLTFDocumentExtension should handle it.
+				if (mime_type.is_empty()) {
+					mime_type = "image/" + resource_uri.get_extension();
+				}
+				// For PNG files, load as bytes to ignore colorspace metadata per glTF spec.
+				// For other formats, use ResourceLoader for better compatibility.
+				if (mime_type == "image/png") {
+					data = FileAccess::get_file_as_bytes(resource_uri);
+				} else if (ResourceLoader::exists(resource_uri)) {
 					Ref<Texture2D> texture = ResourceLoader::load(resource_uri, "Texture2D");
 					if (texture.is_valid()) {
 						p_state->images.push_back(texture);
@@ -4216,15 +4246,11 @@ Error GLTFDocument::_parse_images(Ref<GLTFState> p_state, const String &p_base_p
 						continue;
 					}
 				}
-				// mimeType is optional, but if we have it in the file extension, let's use it.
-				// If the mimeType does not match with the file extension, either it should be
-				// specified in the file, or the GLTFDocumentExtension should handle it.
-				if (mime_type.is_empty()) {
-					mime_type = "image/" + resource_uri.get_extension();
-				}
 				// Fallback to loading as byte array. This enables us to support the
 				// spec's requirement that we honor mimetype regardless of file URI.
-				data = FileAccess::get_file_as_bytes(resource_uri);
+				if (data.is_empty()) {
+					data = FileAccess::get_file_as_bytes(resource_uri);
+				}
 				if (data.is_empty()) {
 					WARN_PRINT(vformat("glTF: Image index '%d' couldn't be loaded as a buffer of MIME type '%s' from URI: %s because there was no data to load. Skipping it.", i, mime_type, resource_uri));
 					p_state->images.push_back(Ref<Texture2D>()); // Placeholder to keep count.
