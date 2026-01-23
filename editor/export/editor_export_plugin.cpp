@@ -278,6 +278,12 @@ PackedByteArray EditorExportPlugin::update_android_prebuilt_manifest(const Ref<E
 	return ret;
 }
 
+PackedStringArray EditorExportPlugin::get_android_packaging_options(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
+	PackedStringArray ret;
+	GDVIRTUAL_CALL(_get_android_packaging_options, p_export_platform, p_debug, ret);
+	return ret;
+}
+
 PackedStringArray EditorExportPlugin::_get_export_features(const Ref<EditorExportPlatform> &p_platform, bool p_debug) const {
 	PackedStringArray ret;
 	GDVIRTUAL_CALL(_get_export_features, p_platform, p_debug, ret);
@@ -396,4 +402,5 @@ void EditorExportPlugin::_bind_methods() {
 	GDVIRTUAL_BIND(_get_android_manifest_application_element_contents, "platform", "debug");
 	GDVIRTUAL_BIND(_get_android_manifest_element_contents, "platform", "debug");
 	GDVIRTUAL_BIND(_update_android_prebuilt_manifest, "platform", "manifest_data");
+	GDVIRTUAL_BIND(_get_android_packaging_options, "platform", "debug");
 }

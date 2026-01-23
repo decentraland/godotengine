@@ -127,6 +127,20 @@ android {
         exclude 'META-INF/LICENSE'
         exclude 'META-INF/NOTICE'
 
+        // Godot user plugins packaging options
+        String[] pluginPackagingOptions = getGodotPluginsPackagingOptions()
+        if (pluginPackagingOptions != null && pluginPackagingOptions.size() > 0) {
+            for (String option : pluginPackagingOptions) {
+                if (option.startsWith("pickFirst:")) {
+                    pickFirst option.substring("pickFirst:".length())
+                } else if (option.startsWith("exclude:")) {
+                    exclude option.substring("exclude:".length())
+                } else if (option.startsWith("merge:")) {
+                    merge option.substring("merge:".length())
+                }
+            }
+        }
+
         // Debug symbols are kept for development within Android Studio.
         if (shouldNotStrip()) {
             jniLibs {
