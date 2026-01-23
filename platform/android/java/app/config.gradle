@@ -258,6 +258,25 @@ ext.getGodotPluginsMavenRepos = { ->
 }
 
 /**
+ * Parse the project properties for the 'plugins_packaging_options' property and return
+ * it for inclusion in the build packaging options.
+ */
+ext.getGodotPluginsPackagingOptions = { ->
+    Set<String> packagingOptions = []
+
+    // Retrieve the list of packaging options.
+    if (project.hasProperty("plugins_packaging_options")) {
+        String packagingOptionsList = project.property("plugins_packaging_options")
+        if (packagingOptionsList != null && !packagingOptionsList.trim().isEmpty()) {
+            for (String option : packagingOptionsList.split(VALUE_SEPARATOR_REGEX)) {
+                packagingOptions += option.trim()
+            }
+        }
+    }
+    return packagingOptions
+}
+
+/**
  * Parse the project properties for the 'plugins_remote_binaries' property and return
  * it for inclusion in the build dependencies.
  */
