@@ -15,6 +15,7 @@ on:
 # Global Settings
 env:
   GODOT_VERSION: 4.5.1.stable
+  GODOT_BASE_VERSION: "4.5.1"
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
@@ -29,7 +30,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          
+
+      - name: Determine upload path
+        id: upload-path
+        run: |
+          BASE_VERSION="${{ env.GODOT_BASE_VERSION }}"
+          STABLE_BRANCH="${BASE_VERSION}-stable"
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          SAFE_BRANCH=$(echo "${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+
+          if [[ "${BRANCH_NAME}" == "${STABLE_BRANCH}" ]]; then
+            UPLOAD_PATH="${BASE_VERSION}.stable"
+          else
+            UPLOAD_PATH="branches/${SAFE_BRANCH}"
+          fi
+
+          echo "UPLOAD_PATH=${UPLOAD_PATH}" >> $GITHUB_OUTPUT
+          echo "Upload path: ${UPLOAD_PATH}"
 
       - name: Configure AWS CLI for R2
         run: |
@@ -150,17 +167,19 @@ jobs:
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          UPLOAD_PATH: ${{ steps.upload-path.outputs.UPLOAD_PATH }}
         run: |
-          aws s3 cp editors/ "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/editors/" --recursive --endpoint-url "${R2_ENDPOINT}"
-          echo "✓ Uploaded editors to: ${{ env.GODOT_VERSION }}/editors/"
+          aws s3 cp editors/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/editors/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Uploaded editors to: ${UPLOAD_PATH}/editors/"
 
       - name: Upload compressed templates to R2
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          UPLOAD_PATH: ${{ steps.upload-path.outputs.UPLOAD_PATH }}
         run: |
-          aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${{ env.GODOT_VERSION }}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
-          echo "✓ Uploaded compressed templates to: ${{ env.GODOT_VERSION }}/compressed-templates/"
+          aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Uploaded compressed templates to: ${UPLOAD_PATH}/compressed-templates/"
 
       - name: Cleanup temporary artifacts from R2
         env:
