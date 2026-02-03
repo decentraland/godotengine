@@ -703,7 +703,7 @@ _FORCE_INLINE_ int _convert_utf32_offset_to_utf16(const String &p_existing_text,
 	return limit;
 }
 
-void DisplayServerAppleEmbedded::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end) {
+void DisplayServerAppleEmbedded::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end, BitField<VirtualKeyboardInputFlags> p_input_flags) {
 	NSString *existingString = [[NSString alloc] initWithUTF8String:p_existing_text.utf8().get_data()];
 
 	GDTAppDelegateService.viewController.keyboardView.keyboardType = UIKeyboardTypeDefault;
@@ -737,6 +737,13 @@ void DisplayServerAppleEmbedded::virtual_keyboard_show(const String &p_existing_
 			GDTAppDelegateService.viewController.keyboardView.keyboardType = UIKeyboardTypeWebSearch;
 			GDTAppDelegateService.viewController.keyboardView.textContentType = UITextContentTypeURL;
 		} break;
+	}
+
+	// Configure autocorrection based on input flags.
+	if (p_input_flags & KEYBOARD_INPUT_FLAG_AUTOCORRECT_DISABLED) {
+		GDTAppDelegateService.viewController.keyboardView.autocorrectionType = UITextAutocorrectionTypeNo;
+	} else {
+		GDTAppDelegateService.viewController.keyboardView.autocorrectionType = UITextAutocorrectionTypeDefault;
 	}
 
 	[GDTAppDelegateService.viewController.keyboardView

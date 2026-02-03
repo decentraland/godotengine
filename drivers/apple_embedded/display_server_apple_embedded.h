@@ -215,7 +215,7 @@ public:
 
 	virtual bool is_touchscreen_available() const override;
 
-	virtual void virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end) override;
+	virtual void virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end, BitField<VirtualKeyboardInputFlags> p_input_flags = KEYBOARD_INPUT_FLAG_NONE) override;
 	virtual void virtual_keyboard_hide() override;
 
 	void virtual_keyboard_set_height(int height);

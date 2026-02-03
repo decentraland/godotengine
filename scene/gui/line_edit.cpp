@@ -2176,10 +2176,15 @@ void LineEdit::show_virtual_keyboard() {
 	_update_ime_window_position();
 
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_VIRTUAL_KEYBOARD) && virtual_keyboard_enabled) {
+		BitField<DisplayServer::VirtualKeyboardInputFlags> input_flags = DisplayServer::KEYBOARD_INPUT_FLAG_NONE;
+		if (!virtual_keyboard_autocorrect_enabled) {
+			input_flags.set_flag(DisplayServer::KEYBOARD_INPUT_FLAG_AUTOCORRECT_DISABLED);
+		}
+
 		if (selection.enabled) {
-			DisplayServer::get_singleton()->virtual_keyboard_show(text, get_global_rect(), DisplayServer::VirtualKeyboardType(virtual_keyboard_type), max_length, selection.begin, selection.end);
+			DisplayServer::get_singleton()->virtual_keyboard_show(text, get_global_rect(), DisplayServer::VirtualKeyboardType(virtual_keyboard_type), max_length, selection.begin, selection.end, input_flags);
 		} else {
-			DisplayServer::get_singleton()->virtual_keyboard_show(text, get_global_rect(), DisplayServer::VirtualKeyboardType(virtual_keyboard_type), max_length, caret_column);
+			DisplayServer::get_singleton()->virtual_keyboard_show(text, get_global_rect(), DisplayServer::VirtualKeyboardType(virtual_keyboard_type), max_length, caret_column, -1, input_flags);
 		}
 	}
 }
@@ -2830,6 +2835,14 @@ LineEdit::VirtualKeyboardType LineEdit::get_virtual_keyboard_type() const {
 	return virtual_keyboard_type;
 }
 
+void LineEdit::set_virtual_keyboard_autocorrect_enabled(bool p_enabled) {
+	virtual_keyboard_autocorrect_enabled = p_enabled;
+}
+
+bool LineEdit::is_virtual_keyboard_autocorrect_enabled() const {
+	return virtual_keyboard_autocorrect_enabled;
+}
+
 void LineEdit::set_middle_mouse_paste_enabled(bool p_enabled) {
 	middle_mouse_paste_enabled = p_enabled;
 }
@@ -3269,6 +3282,8 @@ void LineEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_virtual_keyboard_show_on_focus"), &LineEdit::get_virtual_keyboard_show_on_focus);
 	ClassDB::bind_method(D_METHOD("set_virtual_keyboard_type", "type"), &LineEdit::set_virtual_keyboard_type);
 	ClassDB::bind_method(D_METHOD("get_virtual_keyboard_type"), &LineEdit::get_virtual_keyboard_type);
+	ClassDB::bind_method(D_METHOD("set_virtual_keyboard_autocorrect_enabled", "enable"), &LineEdit::set_virtual_keyboard_autocorrect_enabled);
+	ClassDB::bind_method(D_METHOD("is_virtual_keyboard_autocorrect_enabled"), &LineEdit::is_virtual_keyboard_autocorrect_enabled);
 	ClassDB::bind_method(D_METHOD("set_clear_button_enabled", "enable"), &LineEdit::set_clear_button_enabled);
 	ClassDB::bind_method(D_METHOD("is_clear_button_enabled"), &LineEdit::is_clear_button_enabled);
 	ClassDB::bind_method(D_METHOD("set_shortcut_keys_enabled", "enable"), &LineEdit::set_shortcut_keys_enabled);
@@ -3348,6 +3363,7 @@ void LineEdit::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_enabled"), "set_virtual_keyboard_enabled", "is_virtual_keyboard_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_show_on_focus"), "set_virtual_keyboard_show_on_focus", "get_virtual_keyboard_show_on_focus");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "virtual_keyboard_type", PROPERTY_HINT_ENUM, "Default,Multiline,Number,Decimal,Phone,Email,Password,URL"), "set_virtual_keyboard_type", "get_virtual_keyboard_type");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_autocorrect_enabled"), "set_virtual_keyboard_autocorrect_enabled", "is_virtual_keyboard_autocorrect_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clear_button_enabled"), "set_clear_button_enabled", "is_clear_button_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shortcut_keys_enabled"), "set_shortcut_keys_enabled", "is_shortcut_keys_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "middle_mouse_paste_enabled"), "set_middle_mouse_paste_enabled", "is_middle_mouse_paste_enabled");

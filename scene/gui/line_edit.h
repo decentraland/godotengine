@@ -150,6 +150,7 @@ private:
 	bool virtual_keyboard_enabled = true;
 	bool virtual_keyboard_show_on_focus = true;
 	VirtualKeyboardType virtual_keyboard_type = KEYBOARD_TYPE_DEFAULT;
+	bool virtual_keyboard_autocorrect_enabled = true;
 
 	bool middle_mouse_paste_enabled = true;
 
@@ -409,6 +410,9 @@ public:
 
 	void set_virtual_keyboard_type(VirtualKeyboardType p_type);
 	VirtualKeyboardType get_virtual_keyboard_type() const;
+
+	void set_virtual_keyboard_autocorrect_enabled(bool p_enabled);
+	bool is_virtual_keyboard_autocorrect_enabled() const;
 
 	void set_middle_mouse_paste_enabled(bool p_enabled);
 	bool is_middle_mouse_paste_enabled() const;

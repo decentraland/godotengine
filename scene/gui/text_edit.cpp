@@ -3492,7 +3492,12 @@ void TextEdit::_show_virtual_keyboard() {
 			caret_end = caret_start + post_text.length();
 		}
 
-		DisplayServer::get_singleton()->virtual_keyboard_show(get_text(), get_global_rect(), DisplayServer::KEYBOARD_TYPE_MULTILINE, -1, caret_start, caret_end);
+		BitField<DisplayServer::VirtualKeyboardInputFlags> input_flags = DisplayServer::KEYBOARD_INPUT_FLAG_NONE;
+		if (!virtual_keyboard_autocorrect_enabled) {
+			input_flags.set_flag(DisplayServer::KEYBOARD_INPUT_FLAG_AUTOCORRECT_DISABLED);
+		}
+
+		DisplayServer::get_singleton()->virtual_keyboard_show(get_text(), get_global_rect(), DisplayServer::KEYBOARD_TYPE_MULTILINE, -1, caret_start, caret_end, input_flags);
 	}
 }
 
@@ -3918,6 +3923,14 @@ void TextEdit::set_virtual_keyboard_show_on_focus(bool p_show_on_focus) {
 
 bool TextEdit::get_virtual_keyboard_show_on_focus() const {
 	return virtual_keyboard_show_on_focus;
+}
+
+void TextEdit::set_virtual_keyboard_autocorrect_enabled(bool p_enabled) {
+	virtual_keyboard_autocorrect_enabled = p_enabled;
+}
+
+bool TextEdit::is_virtual_keyboard_autocorrect_enabled() const {
+	return virtual_keyboard_autocorrect_enabled;
 }
 
 void TextEdit::set_middle_mouse_paste_enabled(bool p_enabled) {
@@ -7139,6 +7152,9 @@ void TextEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_virtual_keyboard_show_on_focus", "show_on_focus"), &TextEdit::set_virtual_keyboard_show_on_focus);
 	ClassDB::bind_method(D_METHOD("get_virtual_keyboard_show_on_focus"), &TextEdit::get_virtual_keyboard_show_on_focus);
 
+	ClassDB::bind_method(D_METHOD("set_virtual_keyboard_autocorrect_enabled", "enable"), &TextEdit::set_virtual_keyboard_autocorrect_enabled);
+	ClassDB::bind_method(D_METHOD("is_virtual_keyboard_autocorrect_enabled"), &TextEdit::is_virtual_keyboard_autocorrect_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_middle_mouse_paste_enabled", "enabled"), &TextEdit::set_middle_mouse_paste_enabled);
 	ClassDB::bind_method(D_METHOD("is_middle_mouse_paste_enabled"), &TextEdit::is_middle_mouse_paste_enabled);
 
@@ -7544,6 +7560,7 @@ void TextEdit::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "drag_and_drop_selection_enabled"), "set_drag_and_drop_selection_enabled", "is_drag_and_drop_selection_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_enabled"), "set_virtual_keyboard_enabled", "is_virtual_keyboard_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_show_on_focus"), "set_virtual_keyboard_show_on_focus", "get_virtual_keyboard_show_on_focus");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "virtual_keyboard_autocorrect_enabled"), "set_virtual_keyboard_autocorrect_enabled", "is_virtual_keyboard_autocorrect_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "middle_mouse_paste_enabled"), "set_middle_mouse_paste_enabled", "is_middle_mouse_paste_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "empty_selection_clipboard_enabled"), "set_empty_selection_clipboard_enabled", "is_empty_selection_clipboard_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "wrap_mode", PROPERTY_HINT_ENUM, "None,Boundary"), "set_line_wrapping_mode", "get_line_wrapping_mode");

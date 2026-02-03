@@ -57,6 +57,10 @@ public class GodotEditText extends EditText {
 	private final static int HANDLER_OPEN_IME_KEYBOARD = 2;
 	private final static int HANDLER_CLOSE_IME_KEYBOARD = 3;
 
+	// Input flags must be kept up-to-date with DisplayServer::VirtualKeyboardInputFlags
+	public final static int KEYBOARD_INPUT_FLAG_NONE = 0;
+	public final static int KEYBOARD_INPUT_FLAG_AUTOCORRECT_DISABLED = 1 << 0;
+
 	// Enum must be kept up-to-date with DisplayServer::VirtualKeyboardType
 	public enum VirtualKeyboardType {
 		KEYBOARD_TYPE_DEFAULT,
@@ -78,6 +82,7 @@ public class GodotEditText extends EditText {
 	private String mOriginText;
 	private int mMaxInputLength = Integer.MAX_VALUE;
 	private VirtualKeyboardType mKeyboardType = VirtualKeyboardType.KEYBOARD_TYPE_DEFAULT;
+	private int mInputFlags = KEYBOARD_INPUT_FLAG_NONE;
 
 	private static class EditHandler extends Handler {
 		private final WeakReference<GodotEditText> mEdit;
@@ -119,6 +124,10 @@ public class GodotEditText extends EditText {
 
 	public VirtualKeyboardType getKeyboardType() {
 		return mKeyboardType;
+	}
+
+	public int getInputFlags() {
+		return mInputFlags;
 	}
 
 	private void handleMessage(final Message msg) {
@@ -169,6 +178,12 @@ public class GodotEditText extends EditText {
 							inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI;
 							break;
 					}
+
+					// Apply input flags.
+					if ((edit.getInputFlags() & KEYBOARD_INPUT_FLAG_AUTOCORRECT_DISABLED) != 0) {
+						inputType |= InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+					}
+
 					edit.setInputType(inputType);
 
 					if (!TextUtils.isEmpty(acceptCharacters)) {
@@ -271,7 +286,7 @@ public class GodotEditText extends EditText {
 	// ===========================================================
 	// Methods
 	// ===========================================================
-	public void showKeyboard(String p_existing_text, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+	public void showKeyboard(String p_existing_text, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end, int p_input_flags) {
 		if (hasHardwareKeyboard()) {
 			return;
 		}
@@ -293,6 +308,7 @@ public class GodotEditText extends EditText {
 		}
 
 		this.mKeyboardType = p_type;
+		this.mInputFlags = p_input_flags;
 
 		final Message msg = new Message();
 		msg.what = HANDLER_OPEN_IME_KEYBOARD;

@@ -84,7 +84,7 @@ public:
 	String get_unique_id();
 	bool has_vk();
 	bool has_hardware_keyboard();
-	void show_vk(const String &p_existing, int p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end);
+	void show_vk(const String &p_existing, int p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end, int p_input_flags);
 	void hide_vk();
 	int get_vk_height();
 	void set_vk_height(int p_height);
