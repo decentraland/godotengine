@@ -177,8 +177,8 @@ void GI::voxel_gi_allocate_data(RID p_voxel_gi, const Transform3D &p_to_cell_xfo
 				RD::get_singleton()->compute_list_end();
 			}
 
-			RD::get_singleton()->free(uniform_set);
-			RD::get_singleton()->free(shared_tex);
+			RD::get_singleton()->free_rid(uniform_set);
+			RD::get_singleton()->free_rid(shared_tex);
 		}
 #endif
 	}

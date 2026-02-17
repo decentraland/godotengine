@@ -67,7 +67,7 @@ void TextureStorage::Texture::cleanup() {
 	}
 #ifdef ANDROID_EXTERNAL_TEXTURE_YCBCR_SUPPORT
 	if (RD::get_singleton()->texture_is_valid(ycbcr_source_texture)) {
-		RD::get_singleton()->free(ycbcr_source_texture);
+		RD::get_singleton()->free_rid(ycbcr_source_texture);
 	}
 #endif
 	if (canvas_texture) {
@@ -1502,7 +1502,7 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 		// We must create a new texture for each new hardware buffer because
 		// the external memory binding is done at texture creation time.
 		if (tex->ycbcr_source_texture.is_valid()) {
-			RD::get_singleton()->free(tex->ycbcr_source_texture);
+			RD::get_singleton()->free_rid(tex->ycbcr_source_texture);
 			tex->ycbcr_source_texture = RID();
 		}
 
@@ -1533,7 +1533,7 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 			if (need_new_dest) {
 				// Free the old texture if it exists.
 				if (tex->rd_texture.is_valid()) {
-					RD::get_singleton()->free(tex->rd_texture);
+					RD::get_singleton()->free_rid(tex->rd_texture);
 					tex->rd_texture = RID();
 				}
 
@@ -1587,7 +1587,7 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 		if (tex->rd_texture.is_valid()) {
 			Vector2i current_size = RD::get_singleton()->texture_size(tex->rd_texture);
 			if (current_size.x != p_width || current_size.y != p_height) {
-				RD::get_singleton()->free(tex->rd_texture);
+				RD::get_singleton()->free_rid(tex->rd_texture);
 				tex->rd_texture = RID();
 			}
 		}
@@ -1599,7 +1599,7 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 		if (ios_texture.is_valid()) {
 			// Free old texture if we have one (different IOSurface).
 			if (tex->rd_texture.is_valid()) {
-				RD::get_singleton()->free(tex->rd_texture);
+				RD::get_singleton()->free_rid(tex->rd_texture);
 			}
 			tex->rd_texture = ios_texture;
 			return;
@@ -1627,7 +1627,7 @@ void TextureStorage::texture_external_update(RID p_texture, int p_width, int p_h
 #endif
 
 	if (tex->rd_texture.is_valid()) {
-		RD::get_singleton()->free(tex->rd_texture);
+		RD::get_singleton()->free_rid(tex->rd_texture);
 	}
 
 	RD::TextureFormat tf;

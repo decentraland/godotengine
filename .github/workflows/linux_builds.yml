@@ -13,15 +13,13 @@ on:
 
 # Global Settings
 env:
- # TODO: SCONS_FLAGS from 4.5 diff
-  # SCONS_FLAGS: >-
-  #   dev_mode=yes
-  #   module_text_server_fb_enabled=yes
-  #   "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.17.0/"
-  GODOT_CPP_BRANCH: 4.4
+  SCONS_FLAGS: >-
+    dev_mode=yes
+    module_text_server_fb_enabled=yes
+    "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.18.0/"
+  GODOT_CPP_BRANCH: 4.5
   # Used for the cache key. Add version suffix to force clean build.
-  GODOT_BASE_BRANCH: 4.4
-  SCONSFLAGS: verbose=yes warnings=extra werror=yes module_text_server_fb_enabled=yes strict_checks=yes
+  GODOT_BASE_BRANCH: 4.6
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   ASAN_OPTIONS: color=always:print_suppressions=1:suppressions=${{ github.workspace }}/misc/error_suppressions/asan.txt
@@ -45,21 +43,21 @@ jobs:
           - name: Editor (target=editor)
             cache-name: linux-editor
             target: editor
-            sconsflags: production=yes
+            scons-flags: production=yes
             bin: "./bin/godot.linuxbsd.editor.x86_64"
             binMoved: "./bin/linux_editor.x86_64"
 
           - name: Template (target=template_release)
             cache-name: linux-template-release
             target: template_release
-            sconsflags: production=yes
+            scons-flags: production=yes
             bin: "./bin/godot.linuxbsd.template_release.x86_64"
             binMoved: "./bin/linux_release.x86_64"
 
           - name: Template (target=template_debug)
             cache-name: linux-template-debug
             target: template_debug
-            sconsflags: production=yes
+            scons-flags: production=yes
             bin: "./bin/godot.linuxbsd.template_debug.x86_64"
             binMoved: "./bin/linux_debug.x86_64"
 
@@ -113,12 +111,12 @@ jobs:
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
           repo: AccessKit/accesskit-c
-          version: tags/0.17.0
-          file: accesskit-c-0.17.0.zip
-          target: accesskit-c-0.17.0/accesskit_c.zip
+          version: tags/0.18.0
+          file: accesskit-c-0.18.0.zip
+          target: accesskit-c-0.18.0/accesskit_c.zip
 
       - name: Extract pre-built AccessKit
-        run: unzip -o accesskit-c-0.17.0/accesskit_c.zip
+        run: unzip -o accesskit-c-0.18.0/accesskit_c.zip
 
       - name: Install mold linker
         if: matrix.proj-test
@@ -130,7 +128,6 @@ jobs:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: linuxbsd
           target: ${{ matrix.target }}
-          tests: false
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save

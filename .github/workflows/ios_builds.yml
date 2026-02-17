@@ -19,8 +19,8 @@ env:
   #   module_text_server_fb_enabled=yes
   #   tests=no
   #   debug_symbols=no
-  GODOT_BASE_BRANCH: 4.4
-  SCONSFLAGS: verbose=yes warnings=no production=yes debug_symbols=yes use_lto=yes
+  GODOT_BASE_BRANCH: 4.6
+  SCONS_FLAGS: verbose=yes warnings=no production=yes debug_symbols=yes
 
 concurrency:
   group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-ios
@@ -67,10 +67,9 @@ jobs:
       - name: Compilation (${{matrix.arch}})
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: ${{ env.SCONSFLAGS }} ios_simulator=${{ matrix.ios_simulator }} arch=${{ matrix.arch }}
+          scons-flags: ${{ env.SCONS_FLAGS }} ios_simulator=${{ matrix.ios_simulator }} arch=${{ matrix.arch }}
           platform: ios
           target: ${{ matrix.target }}
-          tests: false
 
       - name: Setup Godot build cache restore
         uses: ./.github/actions/godot-cache-save

@@ -13,16 +13,9 @@ on:
 
 # Global Settings
 env:
- # TODO: SCONS_FLAGS from 4.5 diff
- # SCONS_FLAGS: >-
- #   dev_mode=yes
- #   module_text_server_fb_enabled=yes
- #   tests=no
- #   swappy=yes
-
   # Used for the cache key. Add version suffix to force clean build.
-  GODOT_BASE_BRANCH: 4.4
-  SCONSFLAGS: verbose=yes warnings=extra werror=yes debug_symbols=yes module_text_server_fb_enabled=yes 
+  GODOT_BASE_BRANCH: 4.6
+  SCONS_FLAGS: verbose=yes warnings=extra werror=yes debug_symbols=yes module_text_server_fb_enabled=yes
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-android
@@ -70,26 +63,23 @@ jobs:
     # - name: Compilation (arm32)
     #   uses: ./.github/actions/godot-build
     #   with:
-    #     sconsflags: ${{ env.SCONSFLAGS }} arch=arm32
+    #     scons-flags: ${{ env.SCONS_FLAGS }} arch=arm32
     #     platform: android
     #     target: ${{ matrix.target }}
-    #     tests: false
 
     - name: Compilation release (arm64)
       uses: ./.github/actions/godot-build
       with:
-        sconsflags: ${{ env.SCONSFLAGS }} arch=arm64 swappy=yes
+        scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 swappy=yes
         platform: android
         target: template_release
-        tests: false
 
     - name: Compilation debug (arm64)
       uses: ./.github/actions/godot-build
       with:
-        sconsflags: ${{ env.SCONSFLAGS }} arch=arm64 swappy=yes
+        scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 swappy=yes
         platform: android
         target: template_debug
-        tests: false
 
     - name: Save Godot build cache
       uses: ./.github/actions/godot-cache-save

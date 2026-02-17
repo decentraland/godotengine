@@ -39,24 +39,21 @@ jobs:
           - name: Editor (target=editor)
             cache-name: windows-editor
             target: editor
-            tests: false
-            sconsflags: production=yes debug_symbols=no
+            scons-flags: production=yes debug_symbols=no
             bin: "./bin/godot.windows.editor.x86_64"
             binMoved: "./bin/windows_editor_x86_64"
 
           - name: Template (target=template_release)
             cache-name: windows-template-release
             target: template_release
-            tests: false
-            sconsflags: production=yes debug_symbols=no
+            scons-flags: production=yes debug_symbols=no
             bin: "./bin/godot.windows.template_release.x86_64"
             binMoved: "./bin/windows_release_x86_64"
 
           - name: Template (target=template_debug)
             cache-name: windows-template-debug
             target: template_debug
-            tests: false
-            sconsflags: production=yes debug_symbols=no
+            scons-flags: production=yes debug_symbols=no
             bin: "./bin/godot.windows.template_debug.x86_64"
             binMoved: "./bin/windows_debug_x86_64"
 
@@ -108,7 +105,6 @@ jobs:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: windows
           target: ${{ matrix.target }}
-          tests: ${{ matrix.tests }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
