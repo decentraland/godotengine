@@ -320,6 +320,28 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 							"                <data android:scheme=\"https\" android:host=\"mobile.dclexplorer.com\" />\n";
 	manifest_activity_text += "            </intent-filter>\n";
 
+	// App Links for decentraland.org (restricted to app-relevant paths)
+	manifest_activity_text += "            <intent-filter android:autoVerify=\"true\">\n"
+							"                <action android:name=\"android.intent.action.VIEW\" />\n"
+							"                <category android:name=\"android.intent.category.DEFAULT\" />\n"
+							"                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/mobile\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/jump\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/events\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/places\" />\n";
+	manifest_activity_text += "            </intent-filter>\n";
+
+	// App Links for decentraland.zone (restricted to app-relevant paths)
+	manifest_activity_text += "            <intent-filter android:autoVerify=\"true\">\n"
+							"                <action android:name=\"android.intent.action.VIEW\" />\n"
+							"                <category android:name=\"android.intent.category.DEFAULT\" />\n"
+							"                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/mobile\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/jump\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/events\" />\n"
+							"                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/places\" />\n";
+	manifest_activity_text += "            </intent-filter>\n";
+
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
 		if (export_plugins[i]->supports_platform(p_export_platform)) {
