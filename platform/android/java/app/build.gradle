@@ -7,7 +7,7 @@ plugins {
 
 apply from: 'config.gradle'
 
-// Only apply google-services plugin if google-services.json exists in the project
+// Firebase Analytics: only apply google-services plugin if google-services.json exists
 if (file('google-services.json').exists()) {
     apply plugin: 'com.google.gms.google-services'
 }
