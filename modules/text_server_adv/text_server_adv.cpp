@@ -4855,6 +4855,7 @@ void TextServerAdvanced::_generate_runs(ShapedTextDataAdvanced *p_sd) const {
 				p_sd->runs.push_back(run);
 			}
 			run.range = Vector2i(gl.start, gl.end);
+			run.gl_range = Vector2i(i, i);
 			run.font_rid = gl.font_rid;
 			run.font_size = gl.font_size;
 			run.rtl = bool(gl.flags & GRAPHEME_IS_RTL);
@@ -4862,6 +4863,8 @@ void TextServerAdvanced::_generate_runs(ShapedTextDataAdvanced *p_sd) const {
 		}
 		run.range.x = MIN(run.range.x, gl.start);
 		run.range.y = MAX(run.range.y, gl.end);
+		run.gl_range.x = MIN(run.gl_range.x, i);
+		run.gl_range.y = MAX(run.gl_range.y, i);
 	}
 	if (run.span_index >= 0) {
 		p_sd->runs.push_back(run);
@@ -4908,6 +4911,20 @@ Vector2i TextServerAdvanced::_shaped_get_run_range(const RID &p_shaped, int64_t 
 	}
 	ERR_FAIL_INDEX_V(p_index, sd->runs.size(), Vector2i());
 	return sd->runs[p_index].range;
+}
+
+Vector2i TextServerAdvanced::_shaped_get_run_glyph_range(const RID &p_shaped, int64_t p_index) const {
+	ShapedTextDataAdvanced *sd = shaped_owner.get_or_null(p_shaped);
+	ERR_FAIL_NULL_V(sd, Vector2i());
+	MutexLock lock(sd->mutex);
+	if (!sd->valid.is_set()) {
+		const_cast<TextServerAdvanced *>(this)->_shaped_text_shape(p_shaped);
+	}
+	if (sd->runs_dirty) {
+		_generate_runs(sd);
+	}
+	ERR_FAIL_INDEX_V(p_index, sd->runs.size(), Vector2i());
+	return sd->runs[p_index].gl_range;
 }
 
 RID TextServerAdvanced::_shaped_get_run_font_rid(const RID &p_shaped, int64_t p_index) const {
@@ -6260,13 +6277,18 @@ bool TextServerAdvanced::_shaped_text_update_breaks(const RID &p_shaped) {
 		int i = 0;
 		int span_size = sd->spans.size();
 		while (i < span_size) {
+			bool start_with_obj = sd->spans[i].embedded_key != Variant();
 			String language = sd->spans[i].language;
 			int r_start = sd->spans[i].start;
 			if (r_start == sd->spans[i].end) {
 				i++;
 				continue;
 			}
-			while (i + 1 < span_size && (language == sd->spans[i + 1].language || sd->spans[i + 1].start == sd->spans[i + 1].end)) {
+			while (i + 1 < span_size && (language == sd->spans[i + 1].language || start_with_obj || sd->spans[i + 1].embedded_key != Variant() || sd->spans[i + 1].start == sd->spans[i + 1].end)) {
+				if (start_with_obj && sd->spans[i + 1].embedded_key == Variant()) {
+					language = sd->spans[i + 1].language;
+					start_with_obj = false;
+				}
 				i++;
 			}
 			int r_end = sd->spans[i].end;

@@ -4902,17 +4902,18 @@ void Node3DEditorViewport::focus_selection() {
 
 		if (se->gizmo.is_valid()) {
 			for (const KeyValue<int, Transform3D> &GE : se->subgizmos) {
-				const Vector3 pos = se->gizmo->get_subgizmo_transform(GE.key).origin;
+				const Vector3 pos = node_3d->get_global_gizmo_transform().xform(se->gizmo->get_subgizmo_transform(GE.key).origin);
 				if (pos.is_finite()) {
 					center += pos;
 					count++;
 				}
 			}
-		}
-		const Vector3 pos = node_3d->get_global_gizmo_transform().origin;
-		if (pos.is_finite()) {
-			center += pos;
-			count++;
+		} else {
+			const Vector3 pos = node_3d->get_global_gizmo_transform().origin;
+			if (pos.is_finite()) {
+				center += pos;
+				count++;
+			}
 		}
 	}
 
@@ -4989,7 +4990,7 @@ Vector3 Node3DEditorViewport::_get_instance_position(const Point2 &p_pos, Node3D
 		const Basis bb_basis = Basis(bb_basis_x, bb_basis_y, bb_basis_z);
 
 		// This normal-aligned Basis allows us to create an AABB that can fit on the surface plane as snugly as possible.
-		const Transform3D bb_transform = Transform3D(bb_basis, p_node->get_transform().origin);
+		const Transform3D bb_transform = Transform3D(bb_basis, p_node->get_global_transform().origin);
 		const AABB p_node_bb = _calculate_spatial_bounds(p_node, true, &bb_transform);
 		// The x-axis's alignment with the surface normal also makes it trivial to get the distance from `p_node`'s origin at (0, 0, 0) to the correct AABB face.
 		const float offset_distance = -p_node_bb.position.x;
@@ -6085,6 +6086,27 @@ void Node3DEditorViewport::_add_advanced_debug_draw_mode_item(PopupMenu *p_popup
 	display_submenu->set_item_metadata(-1, item_data); // Tooltip is assigned in NOTIFICATION_TRANSLATION_CHANGED.
 }
 
+void Node3DEditorViewport::_load_viewport_inputs() {
+	// Registering with Key::NONE intentionally creates an empty Array.
+	register_shortcut_action("spatial_editor/viewport_orbit_modifier_1", TTRC("Viewport Orbit Modifier 1"), Key::NONE);
+	register_shortcut_action("spatial_editor/viewport_orbit_modifier_2", TTRC("Viewport Orbit Modifier 2"), Key::NONE);
+	register_shortcut_action("spatial_editor/viewport_orbit_snap_modifier_1", TTRC("Viewport Orbit Snap Modifier 1"), Key::ALT);
+	register_shortcut_action("spatial_editor/viewport_orbit_snap_modifier_2", TTRC("Viewport Orbit Snap Modifier 2"), Key::NONE);
+	register_shortcut_action("spatial_editor/viewport_pan_modifier_1", TTRC("Viewport Pan Modifier 1"), Key::SHIFT);
+	register_shortcut_action("spatial_editor/viewport_pan_modifier_2", TTRC("Viewport Pan Modifier 2"), Key::NONE);
+	register_shortcut_action("spatial_editor/viewport_zoom_modifier_1", TTRC("Viewport Zoom Modifier 1"), Key::CTRL);
+	register_shortcut_action("spatial_editor/viewport_zoom_modifier_2", TTRC("Viewport Zoom Modifier 2"), Key::NONE);
+
+	register_shortcut_action("spatial_editor/freelook_left", TTRC("Freelook Left"), Key::A, true);
+	register_shortcut_action("spatial_editor/freelook_right", TTRC("Freelook Right"), Key::D, true);
+	register_shortcut_action("spatial_editor/freelook_forward", TTRC("Freelook Forward"), Key::W, true);
+	register_shortcut_action("spatial_editor/freelook_backwards", TTRC("Freelook Backwards"), Key::S, true);
+	register_shortcut_action("spatial_editor/freelook_up", TTRC("Freelook Up"), Key::E, true);
+	register_shortcut_action("spatial_editor/freelook_down", TTRC("Freelook Down"), Key::Q, true);
+	register_shortcut_action("spatial_editor/freelook_speed_modifier", TTRC("Freelook Speed Modifier"), Key::SHIFT);
+	register_shortcut_action("spatial_editor/freelook_slow_modifier", TTRC("Freelook Slow Modifier"), Key::ALT);
+}
+
 Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index) {
 	cpu_time_history_index = 0;
 	gpu_time_history_index = 0;
@@ -6257,24 +6279,8 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	display_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditorViewport::_menu_option));
 	view_display_menu->set_disable_shortcuts(true);
 
-	// Registering with Key::NONE intentionally creates an empty Array.
-	register_shortcut_action("spatial_editor/viewport_orbit_modifier_1", TTRC("Viewport Orbit Modifier 1"), Key::NONE);
-	register_shortcut_action("spatial_editor/viewport_orbit_modifier_2", TTRC("Viewport Orbit Modifier 2"), Key::NONE);
-	register_shortcut_action("spatial_editor/viewport_orbit_snap_modifier_1", TTRC("Viewport Orbit Snap Modifier 1"), Key::ALT);
-	register_shortcut_action("spatial_editor/viewport_orbit_snap_modifier_2", TTRC("Viewport Orbit Snap Modifier 2"), Key::NONE);
-	register_shortcut_action("spatial_editor/viewport_pan_modifier_1", TTRC("Viewport Pan Modifier 1"), Key::SHIFT);
-	register_shortcut_action("spatial_editor/viewport_pan_modifier_2", TTRC("Viewport Pan Modifier 2"), Key::NONE);
-	register_shortcut_action("spatial_editor/viewport_zoom_modifier_1", TTRC("Viewport Zoom Modifier 1"), Key::CTRL);
-	register_shortcut_action("spatial_editor/viewport_zoom_modifier_2", TTRC("Viewport Zoom Modifier 2"), Key::NONE);
-
-	register_shortcut_action("spatial_editor/freelook_left", TTRC("Freelook Left"), Key::A, true);
-	register_shortcut_action("spatial_editor/freelook_right", TTRC("Freelook Right"), Key::D, true);
-	register_shortcut_action("spatial_editor/freelook_forward", TTRC("Freelook Forward"), Key::W, true);
-	register_shortcut_action("spatial_editor/freelook_backwards", TTRC("Freelook Backwards"), Key::S, true);
-	register_shortcut_action("spatial_editor/freelook_up", TTRC("Freelook Up"), Key::E, true);
-	register_shortcut_action("spatial_editor/freelook_down", TTRC("Freelook Down"), Key::Q, true);
-	register_shortcut_action("spatial_editor/freelook_speed_modifier", TTRC("Freelook Speed Modifier"), Key::SHIFT);
-	register_shortcut_action("spatial_editor/freelook_slow_modifier", TTRC("Freelook Slow Modifier"), Key::ALT);
+	_load_viewport_inputs();
+	InputMap::get_singleton()->connect("project_settings_loaded", callable_mp(this, &Node3DEditorViewport::_load_viewport_inputs));
 
 	ED_SHORTCUT("spatial_editor/lock_transform_x", TTRC("Lock Transformation to X axis"), Key::X);
 	ED_SHORTCUT("spatial_editor/lock_transform_y", TTRC("Lock Transformation to Y axis"), Key::Y);
@@ -6300,6 +6306,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	preview_camera->set_shortcut(ED_SHORTCUT("spatial_editor/toggle_camera_preview", TTRC("Toggle Camera Preview"), KeyModifierMask::CTRL | Key::P));
 	vbox->add_child(preview_camera);
 	preview_camera->set_h_size_flags(0);
+	preview_camera->set_theme_type_variation("CheckBoxNoIconTint");
 	preview_camera->hide();
 	preview_camera->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditorViewport::_toggle_camera_preview));
 	previewing = nullptr;
@@ -7173,6 +7180,16 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 		}
 	}
 
+	if (d.has("zfar")) {
+		settings_zfar->set_value(double(d["zfar"]));
+	}
+	if (d.has("znear")) {
+		settings_znear->set_value(double(d["znear"]));
+	}
+	if (d.has("fov")) {
+		settings_fov->set_value(double(d["fov"]));
+	}
+
 	if (d.has("viewports")) {
 		Array vp = d["viewports"];
 		uint32_t vp_size = static_cast<uint32_t>(vp.size());
@@ -7186,15 +7203,6 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 		}
 	}
 
-	if (d.has("zfar")) {
-		settings_zfar->set_value(double(d["zfar"]));
-	}
-	if (d.has("znear")) {
-		settings_znear->set_value(double(d["znear"]));
-	}
-	if (d.has("fov")) {
-		settings_fov->set_value(double(d["fov"]));
-	}
 	if (d.has("show_grid")) {
 		bool use = d["show_grid"];
 

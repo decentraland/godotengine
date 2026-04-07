@@ -54,6 +54,8 @@ void InputMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("action_get_events", "action"), &InputMap::_action_get_events);
 	ClassDB::bind_method(D_METHOD("event_is_action", "event", "action", "exact_match"), &InputMap::event_is_action, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("load_from_project_settings"), &InputMap::load_from_project_settings);
+
+	ADD_SIGNAL(MethodInfo("project_settings_loaded"));
 }
 
 /**
@@ -329,6 +331,8 @@ void InputMap::load_from_project_settings() {
 			action_add_event(name, event);
 		}
 	}
+
+	emit_signal("project_settings_loaded");
 }
 
 struct _BuiltinActionDisplayName {
@@ -540,15 +544,15 @@ const HashMap<String, List<Ref<InputEvent>>> &InputMap::get_builtins() {
 	default_builtin_cache.insert("ui_text_completion_query", inputs);
 
 	inputs = List<Ref<InputEvent>>();
-	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::TAB));
-	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::ENTER));
-	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::KP_ENTER));
-	default_builtin_cache.insert("ui_text_completion_accept", inputs);
-
-	inputs = List<Ref<InputEvent>>();
 	inputs.push_back(InputEventKey::create_reference(Key::TAB));
 	inputs.push_back(InputEventKey::create_reference(Key::ENTER));
 	inputs.push_back(InputEventKey::create_reference(Key::KP_ENTER));
+	default_builtin_cache.insert("ui_text_completion_accept", inputs);
+
+	inputs = List<Ref<InputEvent>>();
+	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::TAB));
+	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::ENTER));
+	inputs.push_back(InputEventKey::create_reference(KeyModifierMask::SHIFT | Key::KP_ENTER));
 	default_builtin_cache.insert("ui_text_completion_replace", inputs);
 
 	// Newlines

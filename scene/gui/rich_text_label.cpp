@@ -2817,6 +2817,8 @@ void RichTextLabel::gui_input(const Ref<InputEvent> &p_event) {
 					selection.click_char = c_index;
 
 					selection.double_click = true;
+					is_selecting_text = true;
+					click_select_held->start();
 				}
 			} else if (!b->is_pressed()) {
 				if (selection.enabled && DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_CLIPBOARD_PRIMARY)) {
@@ -6059,9 +6061,18 @@ void RichTextLabel::append_text(const String &p_bbcode) {
 				if (!bbcode_value.is_empty()) {
 					int sep = bbcode_value.find_char('x');
 					if (sep == -1) {
+						if (bbcode_value.ends_with("%")) {
+							width_in_percent = true;
+						}
 						width = bbcode_value.to_int();
 					} else {
+						if (bbcode_value.substr(0, sep).ends_with("%")) {
+							width_in_percent = true;
+						}
 						width = bbcode_value.substr(0, sep).to_int();
+						if (bbcode_value.substr(sep + 1).ends_with("%")) {
+							height_in_percent = true;
+						}
 						height = bbcode_value.substr(sep + 1).to_int();
 					}
 				} else {
@@ -7853,6 +7864,9 @@ void RichTextLabel::_bind_methods() {
 	BIND_THEME_ITEM(Theme::DATA_TYPE_COLOR, RichTextLabel, table_border);
 
 	ADD_CLASS_DEPENDENCY("PopupMenu");
+#ifdef MODULE_REGEX_ENABLED
+	ADD_CLASS_DEPENDENCY("RegEx");
+#endif
 }
 
 TextServer::VisibleCharactersBehavior RichTextLabel::get_visible_characters_behavior() const {
