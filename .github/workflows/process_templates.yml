@@ -14,8 +14,8 @@ on:
 
 # Global Settings
 env:
-  GODOT_VERSION: 4.6.1.stable
-  GODOT_BASE_VERSION: "4.6.1"
+  GODOT_VERSION: 4.6.2.stable
+  GODOT_BASE_VERSION: "4.6.2"
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
