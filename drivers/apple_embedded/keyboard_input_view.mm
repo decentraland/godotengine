@@ -100,10 +100,14 @@
 		textRange = NSMakeRange(safeStartIndex, 0);
 	}
 
-	self.selectedRange = textRange;
 	self.previousSelectedRange = textRange;
 
-	return [self becomeFirstResponder];
+	BOOL result = [self becomeFirstResponder];
+
+	// Must set selectedRange AFTER becoming first responder for UIKit to handle it properly.
+	self.selectedRange = textRange;
+
+	return result;
 }
 
 - (BOOL)resignFirstResponder {
