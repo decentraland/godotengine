@@ -2,9 +2,15 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'com.google.gms.google-services' apply false
 }
 
 apply from: 'config.gradle'
+
+// Firebase Analytics: only apply google-services plugin if google-services.json exists
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
 
 allprojects {
     repositories {
@@ -36,6 +42,12 @@ configurations {
 dependencies {
     implementation "androidx.fragment:fragment:$versions.fragmentVersion"
     implementation "androidx.core:core-splashscreen:$versions.splashscreenVersion"
+
+    // Firebase Analytics for install attribution tracking (only if google-services.json is present)
+    if (file('google-services.json').exists()) {
+        implementation platform('com.google.firebase:firebase-bom:33.10.0')
+        implementation 'com.google.firebase:firebase-analytics'
+    }
 
     if (rootProject.findProject(":lib")) {
         implementation project(":lib")

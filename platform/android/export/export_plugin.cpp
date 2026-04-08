@@ -3623,6 +3623,18 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		// Modify res/values/themes.xml file.
 		_fix_themes_xml(p_preset);
 
+		// Copy google-services.json for Firebase Analytics if it exists in the project.
+		{
+			String google_services_src = "res://google-services.json";
+			if (FileAccess::exists(google_services_src)) {
+				Vector<uint8_t> google_services_data = FileAccess::get_file_as_bytes(google_services_src);
+				store_file_at_path(gradle_build_directory.path_join("google-services.json"), google_services_data);
+				print_line("Firebase: google-services.json copied to gradle build directory.");
+			} else {
+				print_line("Firebase: google-services.json not found in project, Firebase Analytics will not be configured.");
+			}
+		}
+
 		//stores all the project files inside the Gradle project directory. Also includes all ABIs
 		_clear_assets_directory(p_preset);
 		String gdextension_libs_path = gradle_build_directory.path_join(GDEXTENSION_LIBS_PATH);
