@@ -662,11 +662,18 @@ void DisplayServerAppleEmbedded::screen_set_orientation(DisplayServer::ScreenOri
 	ERR_FAIL_INDEX(p_screen, screen_count);
 
 	screen_orientation = p_orientation;
+#ifdef IOS_ENABLED
+	// Under the SwiftUI app lifecycle, GDTViewController is wrapped by a UIHostingController
+	// that is the window's root VC. iOS queries the root VC for orientation preferences, so we
+	// must (1) ensure our selectors are installed on the hosting class, and (2) issue the update
+	// against the root VC rather than the inner Godot VC.
+	GDTViewController *vc = GDTAppDelegateService.viewController;
+	[vc propagateUIPreferencesToRootViewController];
+
+	UIViewController *rootVC = vc.view.window.rootViewController ?: vc;
 	if (@available(iOS 16.0, *)) {
-		[GDTAppDelegateService.viewController setNeedsUpdateOfSupportedInterfaceOrientations];
-	}
-#if !defined(VISIONOS_ENABLED)
-	else {
+		[rootVC setNeedsUpdateOfSupportedInterfaceOrientations];
+	} else {
 		[UIViewController attemptRotationToDeviceOrientation];
 	}
 #endif
