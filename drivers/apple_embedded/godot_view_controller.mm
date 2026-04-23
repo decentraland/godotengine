@@ -255,6 +255,8 @@
 		@selector(preferredScreenEdgesDeferringSystemGestures),
 		@selector(prefersHomeIndicatorAutoHidden),
 		@selector(prefersStatusBarHidden),
+		@selector(supportedInterfaceOrientations),
+		@selector(shouldAutorotate),
 	};
 
 	for (SEL sel : selectors) {
