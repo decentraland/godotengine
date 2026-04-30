@@ -53,11 +53,17 @@ struct SwiftUIApp: App {
 		WindowGroup {
 			GodotSwiftUIViewController()
 				.ignoresSafeArea()
-				// HTTPS Universal Links: SwiftUI's WindowGroup may consume
-				// NSUserActivity events before they reach the scene delegate
-				// (GDTApplicationDelegate). Bridge them back to the scene
-				// delegate's scene:continueUserActivity: so plugin services
-				// receive the URL.
+				// HTTPS Universal Links: in a SwiftUI WindowGroup, the
+				// UIWindowScene's delegate is a SwiftUI-internal proxy, not
+				// GDTApplicationDelegate, even when
+				// application:configurationForConnectingSceneSession:options:
+				// returns delegateClass = [GDTApplicationDelegate class]. So
+				// `scene.delegate as? GDTApplicationDelegate` always fails
+				// here. Forward the activity to the real GDTApplicationDelegate
+				// (the @UIApplicationDelegateAdaptor instance) via the legacy
+				// application:continueUserActivity:restorationHandler:, which
+				// iterates `services` exactly like scene:continueUserActivity:
+				// would have.
 				.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
 					NSLog("[DEEPLINK] SwiftUI .onContinueUserActivity fired, activityType=%@ webpageURL=%@",
 					      userActivity.activityType, userActivity.webpageURL?.absoluteString ?? "nil")
@@ -71,19 +77,10 @@ struct SwiftUIApp: App {
 						      s.activationState.rawValue)
 					}
 
-					let pickedScene = (scenes.first(where: { $0.activationState == .foregroundActive })
-					                  ?? scenes.first) as? UIWindowScene
-					guard let scene = pickedScene else {
-						NSLog("[DEEPLINK] no UIWindowScene found, dropping activity")
-						return
-					}
-					guard let sceneDelegate = scene.delegate as? GDTApplicationDelegate else {
-						NSLog("[DEEPLINK] scene.delegate is not GDTApplicationDelegate (was %@), dropping activity",
-						      scene.delegate.map { String(describing: type(of: $0)) } ?? "nil")
-						return
-					}
-					NSLog("[DEEPLINK] forwarding to sceneDelegate.scene(_:continue:)")
-					sceneDelegate.scene(scene, continue: userActivity)
+					NSLog("[DEEPLINK] forwarding to appDelegate.application(_:continue:restorationHandler:)")
+					appDelegate.application(UIApplication.shared,
+					                        continue: userActivity,
+					                        restorationHandler: { _ in })
 				}
 				.onOpenURL { url in
 					NSLog("[DEEPLINK] SwiftUI .onOpenURL fired, url=%@", url.absoluteString)
