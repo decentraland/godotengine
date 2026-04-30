@@ -53,6 +53,26 @@ struct SwiftUIApp: App {
 		WindowGroup {
 			GodotSwiftUIViewController()
 				.ignoresSafeArea()
+				// SwiftUI WindowGroup wraps the scene with a SwiftUI-internal
+				// scene delegate, so events delivered to
+				// scene:continueUserActivity: / scene:openURLContexts: do not
+				// reach the GDTApplicationDelegate configured via
+				// application:configurationForConnectingSceneSession:options:.
+				// Bridge them to the @UIApplicationDelegateAdaptor instance —
+				// the real GDTApplicationDelegate — through the legacy
+				// AppDelegate selectors, which iterate `services` and dispatch
+				// to any registered plugin.
+				.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
+					_ = appDelegate.application(UIApplication.shared,
+					                            continue: userActivity,
+					                            restorationHandler: { _ in })
+				}
+				// iOS 17+ delivers HTTPS Universal Links through the openURL
+				// pipeline rather than continueUserActivity, so this branch is
+				// what actually fires for Universal Links in practice.
+				.onOpenURL { url in
+					_ = appDelegate.application(UIApplication.shared, open: url, options: [:])
+				}
 		}
 	}
 }
