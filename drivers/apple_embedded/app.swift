@@ -90,8 +90,23 @@ struct SwiftUIApp: App {
 					                                      restorationHandler: { _ in })
 					NSLog("[DEEPLINK] application(_:continue:restorationHandler:) returned %@", String(handled))
 				}
+				// HTTPS Universal Links on iOS 17+ in a SwiftUI WindowGroup are
+				// delivered through the openURL pipeline as a plain URL, NOT
+				// through scene:continueUserActivity: / .onContinueUserActivity.
+				// scene:willContinueUserActivityWithType: still fires as a
+				// heads-up that an NSUserActivityTypeBrowsingWeb activity is
+				// inbound, but iOS then routes the URL via .onOpenURL instead
+				// of dispatching the activity. Without this bridge SwiftUI
+				// silently consumes the URL. Forward to the legacy AppDelegate
+				// application:openURL:options: which the fork's
+				// GDTApplicationDelegate already iterates `services` against —
+				// this is the same path warm-start custom URL schemes already
+				// use successfully.
 				.onOpenURL { url in
 					NSLog("[DEEPLINK] SwiftUI .onOpenURL fired, url=%@", url.absoluteString)
+					NSLog("[DEEPLINK] forwarding to appDelegate.application(_:open:options:)")
+					let handled = appDelegate.application(UIApplication.shared, open: url, options: [:])
+					NSLog("[DEEPLINK] application(_:open:options:) returned %@", String(handled))
 				}
 		}
 	}
