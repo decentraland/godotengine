@@ -53,6 +53,20 @@ struct SwiftUIApp: App {
 		WindowGroup {
 			GodotSwiftUIViewController()
 				.ignoresSafeArea()
+				// HTTPS Universal Links: SwiftUI's WindowGroup consumes
+				// NSUserActivity events before they reach the scene delegate
+				// (GDTApplicationDelegate). Bridge them back to the scene
+				// delegate's scene:continueUserActivity: so plugin services
+				// receive the URL.
+				.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
+					guard let scene = UIApplication.shared.connectedScenes
+						.first(where: { $0.activationState == .foregroundActive })
+						as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,
+					      let sceneDelegate = scene.delegate as? GDTApplicationDelegate else {
+						return
+					}
+					sceneDelegate.scene(scene, continue: userActivity)
+				}
 		}
 	}
 }
