@@ -154,6 +154,9 @@ static void _gdt_forward_user_activities_to_services(UIApplication *application,
 }
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.scene:willConnectToSession: fired URLContexts=%lu userActivities=%lu",
+	      (unsigned long)connectionOptions.URLContexts.count,
+	      (unsigned long)connectionOptions.userActivities.count);
 	if (connectionOptions.URLContexts.count > 0) {
 		_gdt_forward_open_url_to_services(UIApplication.sharedApplication, connectionOptions.URLContexts);
 	}
@@ -163,11 +166,23 @@ static void _gdt_forward_user_activities_to_services(UIApplication *application,
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.scene:openURLContexts: fired count=%lu", (unsigned long)URLContexts.count);
 	_gdt_forward_open_url_to_services(UIApplication.sharedApplication, URLContexts);
 }
 
 - (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.scene:continueUserActivity: fired activityType=%@ webpageURL=%@",
+	      userActivity.activityType,
+	      userActivity.webpageURL.absoluteString ?: @"nil");
 	_gdt_forward_user_activities_to_services(UIApplication.sharedApplication, [NSSet setWithObject:userActivity]);
+}
+
+- (void)scene:(UIScene *)scene willContinueUserActivityWithType:(NSString *)userActivityType API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.scene:willContinueUserActivityWithType: fired type=%@", userActivityType);
+}
+
+- (void)scene:(UIScene *)scene didFailToContinueUserActivityWithType:(NSString *)userActivityType error:(NSError *)error API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.scene:didFailToContinueUserActivityWithType: fired type=%@ error=%@", userActivityType, error.localizedDescription);
 }
 
 // MARK: Life-Cycle
@@ -424,6 +439,10 @@ GODOT_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
 }
 
 - (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> *restorableObjects))restorationHandler {
+	NSLog(@"[DEEPLINK] GDTApplicationDelegate.application:continueUserActivity: (legacy AppDelegate) fired activityType=%@ webpageURL=%@",
+	      userActivity.activityType,
+	      userActivity.webpageURL.absoluteString ?: @"nil");
+
 	BOOL result = NO;
 
 	for (GDTAppDelegateServiceProtocol *service in services) {

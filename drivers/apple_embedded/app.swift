@@ -53,19 +53,40 @@ struct SwiftUIApp: App {
 		WindowGroup {
 			GodotSwiftUIViewController()
 				.ignoresSafeArea()
-				// HTTPS Universal Links: SwiftUI's WindowGroup consumes
+				// HTTPS Universal Links: SwiftUI's WindowGroup may consume
 				// NSUserActivity events before they reach the scene delegate
 				// (GDTApplicationDelegate). Bridge them back to the scene
 				// delegate's scene:continueUserActivity: so plugin services
 				// receive the URL.
 				.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
-					guard let scene = UIApplication.shared.connectedScenes
-						.first(where: { $0.activationState == .foregroundActive })
-						as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,
-					      let sceneDelegate = scene.delegate as? GDTApplicationDelegate else {
+					NSLog("[DEEPLINK] SwiftUI .onContinueUserActivity fired, activityType=%@ webpageURL=%@",
+					      userActivity.activityType, userActivity.webpageURL?.absoluteString ?? "nil")
+
+					let scenes = UIApplication.shared.connectedScenes
+					NSLog("[DEEPLINK] connectedScenes count=%lu", UInt(scenes.count))
+					for s in scenes {
+						NSLog("[DEEPLINK]   scene=%@ delegateClass=%@ activationState=%ld",
+						      String(describing: type(of: s)),
+						      s.delegate.map { String(describing: type(of: $0)) } ?? "nil",
+						      s.activationState.rawValue)
+					}
+
+					let pickedScene = (scenes.first(where: { $0.activationState == .foregroundActive })
+					                  ?? scenes.first) as? UIWindowScene
+					guard let scene = pickedScene else {
+						NSLog("[DEEPLINK] no UIWindowScene found, dropping activity")
 						return
 					}
+					guard let sceneDelegate = scene.delegate as? GDTApplicationDelegate else {
+						NSLog("[DEEPLINK] scene.delegate is not GDTApplicationDelegate (was %@), dropping activity",
+						      scene.delegate.map { String(describing: type(of: $0)) } ?? "nil")
+						return
+					}
+					NSLog("[DEEPLINK] forwarding to sceneDelegate.scene(_:continue:)")
 					sceneDelegate.scene(scene, continue: userActivity)
+				}
+				.onOpenURL { url in
+					NSLog("[DEEPLINK] SwiftUI .onOpenURL fired, url=%@", url.absoluteString)
 				}
 		}
 	}
