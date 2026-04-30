@@ -78,17 +78,17 @@ struct SwiftUIApp: App {
 					}
 
 					NSLog("[DEEPLINK] forwarding to appDelegate.application(_:continue:restorationHandler:)")
-					// application(_:continue:restorationHandler:) is an optional
-					// protocol requirement on UIApplicationDelegate, so it must
-					// be called via optional chaining — otherwise this file
-					// fails to compile and the iOS template never picks up the
-					// new code. The return is a Bool? whose value we log purely
-					// to confirm the dispatch reached a service implementation.
-					let handled = appDelegate.application?(UIApplication.shared,
-					                                       continue: userActivity,
-					                                       restorationHandler: { _ in })
-					NSLog("[DEEPLINK] application(_:continue:restorationHandler:) returned %@",
-					      handled.map { String($0) } ?? "nil (selector not dispatched)")
+					// Direct call (no optional chaining): GDTApplicationDelegate's
+					// concrete Objective-C implementation exposes
+					// application(_:continue:restorationHandler:) as a non-optional
+					// method on the class to Swift, even though the
+					// UIApplicationDelegate protocol marks it @objc optional.
+					// The Bool return is logged purely to confirm the dispatch
+					// reached a service implementation.
+					let handled = appDelegate.application(UIApplication.shared,
+					                                      continue: userActivity,
+					                                      restorationHandler: { _ in })
+					NSLog("[DEEPLINK] application(_:continue:restorationHandler:) returned %@", String(handled))
 				}
 				.onOpenURL { url in
 					NSLog("[DEEPLINK] SwiftUI .onOpenURL fired, url=%@", url.absoluteString)
