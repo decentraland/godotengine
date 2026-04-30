@@ -364,6 +364,28 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 							  "                <data android:scheme=\"https\" android:host=\"mobile.dclexplorer.com\" />\n"
 							  "            </intent-filter>\n";
 
+	// App Links for decentraland.org (restricted to app-relevant paths)
+	manifest_activity_text += "            <intent-filter android:autoVerify=\"true\">\n"
+							  "                <action android:name=\"android.intent.action.VIEW\" />\n"
+							  "                <category android:name=\"android.intent.category.DEFAULT\" />\n"
+							  "                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/mobile\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/jump\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/events\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.org\" android:pathPrefix=\"/places\" />\n"
+							  "            </intent-filter>\n";
+
+	// App Links for decentraland.zone (restricted to app-relevant paths)
+	manifest_activity_text += "            <intent-filter android:autoVerify=\"true\">\n"
+							  "                <action android:name=\"android.intent.action.VIEW\" />\n"
+							  "                <category android:name=\"android.intent.category.DEFAULT\" />\n"
+							  "                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/mobile\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/jump\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/events\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"decentraland.zone\" android:pathPrefix=\"/places\" />\n"
+							  "            </intent-filter>\n";
+
 	// Hybrid categories should only go to the actual 'GodotApp' activity.
 	Ref<RegEx> activity_alias_content_to_remove_regex = RegEx::create_from_string(R"delim(<category\s+android:name\s*=\s*"org.godotengine.xr.hybrid.(IMMERSIVE|PANEL)"\s*\/>)delim");
 	String updated_export_plugins_activity_alias_element_contents = activity_alias_content_to_remove_regex->sub(export_plugins_activity_element_contents, "", true);

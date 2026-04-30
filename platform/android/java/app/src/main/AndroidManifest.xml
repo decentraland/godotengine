@@ -63,6 +63,26 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="mobile.dclexplorer.com" />
             </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="decentraland.org" android:pathPrefix="/mobile" />
+                <data android:scheme="https" android:host="decentraland.org" android:pathPrefix="/jump" />
+                <data android:scheme="https" android:host="decentraland.org" android:pathPrefix="/events" />
+                <data android:scheme="https" android:host="decentraland.org" android:pathPrefix="/places" />
+            </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="decentraland.zone" android:pathPrefix="/mobile" />
+                <data android:scheme="https" android:host="decentraland.zone" android:pathPrefix="/jump" />
+                <data android:scheme="https" android:host="decentraland.zone" android:pathPrefix="/events" />
+                <data android:scheme="https" android:host="decentraland.zone" android:pathPrefix="/places" />
+            </intent-filter>
         </activity-alias>
 
     </application>
