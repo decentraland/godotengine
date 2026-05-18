@@ -105,7 +105,7 @@ jobs:
           scons-version: 3.1.2
 
       - name: Setup GCC problem matcher
-        uses: ammaraskar/gcc-problem-matcher@master
+        uses: ammaraskar/gcc-problem-matcher@cb2e3f949c41b7818628f35f8484a9b0acf90cf9 # @master
 
       - name: Download pre-built AccessKit
         uses: dsaltares/fetch-gh-release-asset@1.1.2
