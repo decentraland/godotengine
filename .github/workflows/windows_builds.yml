@@ -86,7 +86,7 @@ jobs:
         run: Expand-Archive -Force angle/angle.zip ${{github.workspace}}/
 
       - name: Setup MSVC problem matcher
-        uses: ammaraskar/msvc-problem-matcher@master
+        uses: ammaraskar/msvc-problem-matcher@541aa4360062d76d9620af6b8bd35cfa0c5ef19f # @master
 
       - name: Download pre-built AccessKit
         uses: dsaltares/fetch-gh-release-asset@1.1.2

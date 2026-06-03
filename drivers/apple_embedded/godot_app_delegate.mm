@@ -120,6 +120,56 @@ static NSMutableArray<GDTAppDelegateServiceProtocol *> *services = nil;
 - (void)application:(UIApplication *)application didDiscardSceneSessions:(NSSet<UISceneSession *> *)sceneSessions API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
 }
 
+// MARK: Scene URL handling
+//
+// In scene-based apps (UIApplicationSceneManifest declared in Info.plist), iOS
+// delivers URLs and user activities through UIWindowSceneDelegate, not through
+// UIApplicationDelegate's application:openURL:options: / continueUserActivity:.
+// Forward these to existing service selectors so plugins keep working without
+// having to opt in to the scene API directly. See:
+//   https://github.com/godotengine/godot/issues/118600
+//   https://github.com/godot-sdk-integrations/godot-deeplink/issues/14
+// Patch derived from `csueiras` proposal in the latter thread.
+
+static void _gdt_forward_open_url_to_services(UIApplication *application, NSSet<UIOpenURLContext *> *url_contexts) {
+	for (UIOpenURLContext *url_context in url_contexts) {
+		for (GDTAppDelegateServiceProtocol *service in services) {
+			if (![service respondsToSelector:@selector(application:openURL:options:)]) {
+				continue;
+			}
+			[service application:application openURL:url_context.URL options:@{}];
+		}
+	}
+}
+
+static void _gdt_forward_user_activities_to_services(UIApplication *application, NSSet<NSUserActivity *> *user_activities) {
+	for (NSUserActivity *user_activity in user_activities) {
+		for (GDTAppDelegateServiceProtocol *service in services) {
+			if (![service respondsToSelector:@selector(application:continueUserActivity:restorationHandler:)]) {
+				continue;
+			}
+			[service application:application continueUserActivity:user_activity restorationHandler:^(__unused NSArray<id<UIUserActivityRestoring>> *restorable_objects) {}];
+		}
+	}
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	if (connectionOptions.URLContexts.count > 0) {
+		_gdt_forward_open_url_to_services(UIApplication.sharedApplication, connectionOptions.URLContexts);
+	}
+	if (connectionOptions.userActivities.count > 0) {
+		_gdt_forward_user_activities_to_services(UIApplication.sharedApplication, connectionOptions.userActivities);
+	}
+}
+
+- (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	_gdt_forward_open_url_to_services(UIApplication.sharedApplication, URLContexts);
+}
+
+- (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	_gdt_forward_user_activities_to_services(UIApplication.sharedApplication, [NSSet setWithObject:userActivity]);
+}
+
 // MARK: Life-Cycle
 
 - (void)sceneDidDisconnect:(UIScene *)scene API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
