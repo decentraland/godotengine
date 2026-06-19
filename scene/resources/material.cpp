@@ -998,7 +998,8 @@ uniform float distance_fade_max : hint_range(0.0, 4096.0, 0.01);
 	if (flags[FLAG_ALBEDO_TEXTURE_MSDF] && !flags[FLAG_UV1_USE_TRIPLANAR]) {
 		code += R"(
 uniform float msdf_pixel_range : hint_range(1.0, 100.0, 1.0);
-uniform float msdf_outline_size : hint_range(0.0, 250.0, 1.0);
+uniform float msdf_outline_size : hint_range(-250.0, 250.0, 1.0);
+uniform float msdf_outline_only : hint_range(0.0, 1.0, 1.0);
 )";
 	}
 
@@ -1646,10 +1647,21 @@ void fragment() {)";
 		code += R"(
 		float px_size = max(0.5 * dot(msdf_size, dest_size), 1.0);
 		float d = msdf_median(albedo_tex.r, albedo_tex.g, albedo_tex.b);
-		if (msdf_outline_size > 0.0) {
-			float cr = clamp(msdf_outline_size, 0.0, (msdf_pixel_range / 2.0) - 1.0) / msdf_pixel_range;
+		if (msdf_outline_size != 0.0) {
+			// Positive grows the glyph edge outward; negative erodes it inward.
+			float cr = clamp(msdf_outline_size, -(msdf_pixel_range / 2.0) + 1.0, (msdf_pixel_range / 2.0) - 1.0) / msdf_pixel_range;
 			d = min(d, albedo_tex.a);
-			albedo_tex.a = clamp((d - 0.5 + cr) * px_size, 0.0, 1.0);
+			if (msdf_outline_only > 0.5) {
+				// Emit only the outline band, centered on the glyph edge: it grows both
+				// outward and inward by |cr|, and is transparent over the remaining glyph
+				// fill so it can be drawn in front of the text without occluding it.
+				float w = abs(cr);
+				float outer = clamp((d - 0.5 + w) * px_size + 0.5, 0.0, 1.0);
+				float inner = clamp((d - 0.5 - w) * px_size + 0.5, 0.0, 1.0);
+				albedo_tex.a = clamp(outer - inner, 0.0, 1.0);
+			} else {
+				albedo_tex.a = clamp((d - 0.5 + cr) * px_size, 0.0, 1.0);
+			}
 		} else {
 			albedo_tex.a = clamp((d - 0.5) * px_size + 0.5, 0.0, 1.0);
 		}

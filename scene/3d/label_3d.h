@@ -84,15 +84,19 @@ private:
 		uint64_t texture_id;
 		int32_t priority;
 		int32_t outline_size;
+		int32_t outline_only;
 
 		bool operator==(const SurfaceKey &p_b) const {
-			return (texture_id == p_b.texture_id) && (priority == p_b.priority) && (outline_size == p_b.outline_size);
+			return (texture_id == p_b.texture_id) && (priority == p_b.priority) && (outline_size == p_b.outline_size) && (outline_only == p_b.outline_only);
 		}
 
-		SurfaceKey(uint64_t p_texture_id, int p_priority, int p_outline_size) {
+		SurfaceKey(uint64_t p_texture_id, int p_priority, int p_outline_size, bool p_outline_only) {
+			// Zero the whole struct (including any padding) so murmur3 hashing is deterministic.
+			memset(this, 0, sizeof(*this));
 			texture_id = p_texture_id;
 			priority = p_priority;
 			outline_size = p_outline_size;
+			outline_only = p_outline_only ? 1 : 0;
 		}
 	};
 
@@ -118,13 +122,34 @@ private:
 	int font_size = 32;
 	Ref<Font> font_override;
 	mutable Ref<Font> theme_font;
+
+	bool bbcode_enabled = false;
+	int character_spacing = 0;
+
+	// Optional real bold/italic font faces used by BBCode tags. When unset, the
+	// corresponding emphasis is synthesized from the base font (embolden / skew).
+	Ref<Font> bold_font_override;
+	Ref<Font> italics_font_override;
+	Ref<Font> bold_italics_font_override;
+
+	// Cached font variations used for synthetic BBCode bold/italic and character spacing.
+	// Indexed by `(bold ? 1 : 0) | (italics ? 2 : 0)`.
+	mutable Ref<Font> styled_fonts[4];
 	Color modulate = Color(1, 1, 1, 1);
 	Point2 lbl_offset;
 	int outline_render_priority = -1;
 	int render_priority = 0;
 
 	int outline_size = 12;
+	// Optional float outline width. When > 0 it overrides `outline_size`; honored
+	// with sub-pixel precision for MSDF fonts (truncated to int for bitmap fonts).
+	float outline_size_float = 0.0f;
 	Color outline_modulate = Color(0, 0, 0, 1);
+
+	// Drop shadow (drawn behind text and outline, offset on the label plane).
+	Color shadow_color = Color(0, 0, 0, 0);
+	Point2 shadow_offset = Point2(1, 1);
+	float shadow_outline_size = 0.0f;
 
 	float line_spacing = 0.f;
 
@@ -145,7 +170,17 @@ private:
 	bool dirty_font = true;
 	bool dirty_text = true;
 
-	void _generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority = 0, int p_outline_size = 0);
+	void _generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority = 0, float p_outline_size = 0.0, bool p_outline_only = false);
+
+	struct StyleSpan {
+		String text;
+		Color color = Color(1, 1, 1, 1);
+		int font_size = 0; // 0 means use the Label3D font_size.
+		bool bold = false;
+		bool italics = false;
+	};
+	Vector<StyleSpan> _parse_bbcode(const String &p_text) const;
+	Ref<Font> _get_styled_font(bool p_bold, bool p_italics) const;
 
 protected:
 	GDVIRTUAL2RC(TypedArray<Vector3i>, _structured_text_parser, Array, String)
@@ -193,6 +228,21 @@ public:
 	void set_uppercase(bool p_uppercase);
 	bool is_uppercase() const;
 
+	void set_bbcode_enabled(bool p_enabled);
+	bool is_bbcode_enabled() const;
+
+	void set_character_spacing(int p_spacing);
+	int get_character_spacing() const;
+
+	void set_bold_font(const Ref<Font> &p_font);
+	Ref<Font> get_bold_font() const;
+
+	void set_italics_font(const Ref<Font> &p_font);
+	Ref<Font> get_italics_font() const;
+
+	void set_bold_italics_font(const Ref<Font> &p_font);
+	Ref<Font> get_bold_italics_font() const;
+
 	void set_font(const Ref<Font> &p_font);
 	Ref<Font> get_font() const;
 	Ref<Font> _get_font_or_default() const;
@@ -202,6 +252,18 @@ public:
 
 	void set_outline_size(int p_size);
 	int get_outline_size() const;
+
+	void set_outline_size_float(float p_size);
+	float get_outline_size_float() const;
+
+	void set_shadow_color(const Color &p_color);
+	Color get_shadow_color() const;
+
+	void set_shadow_offset(const Point2 &p_offset);
+	Point2 get_shadow_offset() const;
+
+	void set_shadow_outline_size(float p_size);
+	float get_shadow_outline_size() const;
 
 	void set_line_spacing(float p_size);
 	float get_line_spacing() const;
