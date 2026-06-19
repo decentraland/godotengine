@@ -946,26 +946,26 @@ Ref<Font> Label3D::get_bold_italics_font() const {
 Ref<Font> Label3D::_get_styled_font(bool p_bold, bool p_italics) const {
 	// Prefer a real font face for the requested emphasis; only synthesize what is
 	// not covered by an assigned override (mirrors RichTextLabel's fallback order).
-	Ref<Font> base;
+	Ref<Font> base_font;
 	bool synth_bold = p_bold;
 	bool synth_italics = p_italics;
 
 	if (p_bold && p_italics && bold_italics_font_override.is_valid()) {
-		base = bold_italics_font_override;
+		base_font = bold_italics_font_override;
 		synth_bold = false;
 		synth_italics = false;
 	} else if (p_bold && bold_font_override.is_valid()) {
-		base = bold_font_override;
+		base_font = bold_font_override;
 		synth_bold = false; // Italics (if requested) is still synthesized.
 	} else if (p_italics && italics_font_override.is_valid()) {
-		base = italics_font_override;
+		base_font = italics_font_override;
 		synth_italics = false; // Bold (if requested) is still synthesized.
 	} else {
-		base = _get_font_or_default();
+		base_font = _get_font_or_default();
 	}
 
 	if (!synth_bold && !synth_italics && character_spacing == 0) {
-		return base;
+		return base_font;
 	}
 
 	// Lazily build and cache font variations (synthetic bold/italic + character spacing).
@@ -975,8 +975,8 @@ Ref<Font> Label3D::_get_styled_font(bool p_bold, bool p_italics) const {
 		fv.instantiate();
 		styled_fonts[idx] = fv;
 	}
-	if (fv->get_base_font() != base) {
-		fv->set_base_font(base);
+	if (fv->get_base_font() != base_font) {
+		fv->set_base_font(base_font);
 	}
 	// Match the synthetic emphasis used by the default theme.
 	fv->set_variation_embolden(synth_bold ? 1.2 : 0.0);
