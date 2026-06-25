@@ -54,10 +54,22 @@
 		<member name="autowrap_trim_flags" type="int" setter="set_autowrap_trim_flags" getter="get_autowrap_trim_flags" enum="TextServer.LineBreakFlag" is_bitfield="true" default="192">
 			Autowrap space trimming flags. See [constant TextServer.BREAK_TRIM_START_EDGE_SPACES] and [constant TextServer.BREAK_TRIM_END_EDGE_SPACES] for more info.
 		</member>
+		<member name="bbcode_enabled" type="bool" setter="set_bbcode_enabled" getter="is_bbcode_enabled" default="false">
+			If [code]true[/code], the [member text] is parsed as a limited subset of BBCode. Supported tags are [code][color][/code], [code][b][/code], [code][i][/code] and [code][font_size][/code], which control per-range font color, bold, italics and font size respectively. Bold and italics are synthesized from the active font.
+		</member>
 		<member name="billboard" type="int" setter="set_billboard_mode" getter="get_billboard_mode" enum="BaseMaterial3D.BillboardMode" default="0">
 			The billboard mode to use for the label.
 		</member>
+		<member name="bold_font" type="Font" setter="set_bold_font" getter="get_bold_font">
+			Real font face used for [code][b]...[/b][/code] BBCode spans (requires [member bbcode_enabled]). When unset, bold is synthesized from [member font] via embolden, which can produce artifacts on MSDF fonts.
+		</member>
+		<member name="bold_italics_font" type="Font" setter="set_bold_italics_font" getter="get_bold_italics_font">
+			Real font face used for combined bold and italics BBCode spans (requires [member bbcode_enabled]). When unset, it falls back to [member bold_font] (with synthesized italics) or [member italics_font] (with synthesized bold), and finally to fully synthesized emphasis from [member font].
+		</member>
 		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" overrides="GeometryInstance3D" enum="GeometryInstance3D.ShadowCastingSetting" default="0" />
+		<member name="character_spacing" type="int" setter="set_character_spacing" getter="get_character_spacing" default="0">
+			Additional horizontal spacing (in pixels) added after each character. This value can be negative to bring characters closer together. Internally applied as [constant TextServer.SPACING_GLYPH] on the font used for shaping.
+		</member>
 		<member name="double_sided" type="bool" setter="set_draw_flag" getter="get_draw_flag" default="true">
 			If [code]true[/code], text can be seen from the back as well, if [code]false[/code], it is invisible when looking at it from behind.
 		</member>
@@ -74,6 +86,9 @@
 		<member name="gi_mode" type="int" setter="set_gi_mode" getter="get_gi_mode" overrides="GeometryInstance3D" enum="GeometryInstance3D.GIMode" default="0" />
 		<member name="horizontal_alignment" type="int" setter="set_horizontal_alignment" getter="get_horizontal_alignment" enum="HorizontalAlignment" default="1">
 			Controls the text's horizontal alignment. Supports left, center, right, and fill (also known as justify).
+		</member>
+		<member name="italics_font" type="Font" setter="set_italics_font" getter="get_italics_font">
+			Real font face used for [code][i]...[/i][/code] BBCode spans (requires [member bbcode_enabled]). When unset, italics is synthesized from [member font] via a skew transform.
 		</member>
 		<member name="justification_flags" type="int" setter="set_justification_flags" getter="get_justification_flags" enum="TextServer.JustificationFlag" is_bitfield="true" default="163">
 			Line fill alignment rules.
@@ -104,6 +119,9 @@
 		<member name="outline_size" type="int" setter="set_outline_size" getter="get_outline_size" default="12">
 			Text outline size.
 		</member>
+		<member name="outline_size_float" type="float" setter="set_outline_size_float" getter="get_outline_size_float" default="0.0">
+			Floating-point text outline size. When non-zero, it overrides [member outline_size]. The fractional part is only honored for MSDF fonts (where the outline is computed in the shader from the distance field); for bitmap/dynamic fonts the value is truncated to whole pixels. For MSDF fonts the outline is drawn as a band centered on the glyph edge (growing both outward and inward) and is transparent over the glyph fill, so it can be placed in front of the text (via [member outline_render_priority]) without occluding it.
+		</member>
 		<member name="pixel_size" type="float" setter="set_pixel_size" getter="get_pixel_size" default="0.005">
 			The size of one pixel's width on the label to scale it in 3D. To make the font look more detailed when up close, increase [member font_size] while decreasing [member pixel_size] at the same time.
 		</member>
@@ -114,6 +132,15 @@
 		</member>
 		<member name="shaded" type="bool" setter="set_draw_flag" getter="get_draw_flag" default="false">
 			If [code]true[/code], the [Light3D] in the [Environment] has effects on the label.
+		</member>
+		<member name="shadow_color" type="Color" setter="set_shadow_color" getter="get_shadow_color" default="Color(0, 0, 0, 0)">
+			The color of the drop shadow. The shadow is only drawn when its alpha is greater than [code]0[/code]. It is rendered behind the text and outline.
+		</member>
+		<member name="shadow_offset" type="Vector2" setter="set_shadow_offset" getter="get_shadow_offset" default="Vector2(1, 1)">
+			The drop shadow offset (in pixels) on the label plane. Positive [code]x[/code] moves the shadow right, positive [code]y[/code] moves it down.
+		</member>
+		<member name="shadow_outline_size" type="float" setter="set_shadow_outline_size" getter="get_shadow_outline_size" default="0.0">
+			Optional outline size (in pixels) applied to the drop shadow, making it thicker. Like [member outline_size_float], the fractional part is only honored for MSDF fonts.
 		</member>
 		<member name="structured_text_bidi_override" type="int" setter="set_structured_text_bidi_override" getter="get_structured_text_bidi_override" enum="TextServer.StructuredTextParser" default="0">
 			Set BiDi algorithm override for the structured text.

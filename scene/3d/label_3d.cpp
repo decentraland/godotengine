@@ -31,6 +31,7 @@
 #include "label_3d.h"
 
 #include "scene/main/window.h"
+#include "scene/resources/font.h"
 #include "scene/resources/mesh.h"
 #include "scene/resources/theme.h"
 #include "scene/theme/theme_db.h"
@@ -66,6 +67,21 @@ void Label3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_uppercase", "enable"), &Label3D::set_uppercase);
 	ClassDB::bind_method(D_METHOD("is_uppercase"), &Label3D::is_uppercase);
 
+	ClassDB::bind_method(D_METHOD("set_bbcode_enabled", "enabled"), &Label3D::set_bbcode_enabled);
+	ClassDB::bind_method(D_METHOD("is_bbcode_enabled"), &Label3D::is_bbcode_enabled);
+
+	ClassDB::bind_method(D_METHOD("set_character_spacing", "spacing"), &Label3D::set_character_spacing);
+	ClassDB::bind_method(D_METHOD("get_character_spacing"), &Label3D::get_character_spacing);
+
+	ClassDB::bind_method(D_METHOD("set_bold_font", "font"), &Label3D::set_bold_font);
+	ClassDB::bind_method(D_METHOD("get_bold_font"), &Label3D::get_bold_font);
+
+	ClassDB::bind_method(D_METHOD("set_italics_font", "font"), &Label3D::set_italics_font);
+	ClassDB::bind_method(D_METHOD("get_italics_font"), &Label3D::get_italics_font);
+
+	ClassDB::bind_method(D_METHOD("set_bold_italics_font", "font"), &Label3D::set_bold_italics_font);
+	ClassDB::bind_method(D_METHOD("get_bold_italics_font"), &Label3D::get_bold_italics_font);
+
 	ClassDB::bind_method(D_METHOD("set_render_priority", "priority"), &Label3D::set_render_priority);
 	ClassDB::bind_method(D_METHOD("get_render_priority"), &Label3D::get_render_priority);
 
@@ -80,6 +96,18 @@ void Label3D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_outline_size", "outline_size"), &Label3D::set_outline_size);
 	ClassDB::bind_method(D_METHOD("get_outline_size"), &Label3D::get_outline_size);
+
+	ClassDB::bind_method(D_METHOD("set_outline_size_float", "outline_size"), &Label3D::set_outline_size_float);
+	ClassDB::bind_method(D_METHOD("get_outline_size_float"), &Label3D::get_outline_size_float);
+
+	ClassDB::bind_method(D_METHOD("set_shadow_color", "color"), &Label3D::set_shadow_color);
+	ClassDB::bind_method(D_METHOD("get_shadow_color"), &Label3D::get_shadow_color);
+
+	ClassDB::bind_method(D_METHOD("set_shadow_offset", "offset"), &Label3D::set_shadow_offset);
+	ClassDB::bind_method(D_METHOD("get_shadow_offset"), &Label3D::get_shadow_offset);
+
+	ClassDB::bind_method(D_METHOD("set_shadow_outline_size", "size"), &Label3D::set_shadow_outline_size);
+	ClassDB::bind_method(D_METHOD("get_shadow_outline_size"), &Label3D::get_shadow_outline_size);
 
 	ClassDB::bind_method(D_METHOD("set_line_spacing", "line_spacing"), &Label3D::set_line_spacing);
 	ClassDB::bind_method(D_METHOD("get_line_spacing"), &Label3D::get_line_spacing);
@@ -149,18 +177,29 @@ void Label3D::_bind_methods() {
 	ADD_GROUP("Text", "");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "modulate"), "set_modulate", "get_modulate");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "outline_modulate"), "set_outline_modulate", "get_outline_modulate");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bbcode_enabled"), "set_bbcode_enabled", "is_bbcode_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT, ""), "set_text", "get_text");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "font", PROPERTY_HINT_RESOURCE_TYPE, "Font"), "set_font", "get_font");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "bold_font", PROPERTY_HINT_RESOURCE_TYPE, "Font"), "set_bold_font", "get_bold_font");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "italics_font", PROPERTY_HINT_RESOURCE_TYPE, "Font"), "set_italics_font", "get_italics_font");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "bold_italics_font", PROPERTY_HINT_RESOURCE_TYPE, "Font"), "set_bold_italics_font", "get_bold_italics_font");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "font_size", PROPERTY_HINT_RANGE, "1,256,1,or_greater,suffix:px"), "set_font_size", "get_font_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "outline_size", PROPERTY_HINT_RANGE, "0,127,1,suffix:px"), "set_outline_size", "get_outline_size");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "outline_size_float", PROPERTY_HINT_RANGE, "-127,127,0.01,suffix:px"), "set_outline_size_float", "get_outline_size_float");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "horizontal_alignment", PROPERTY_HINT_ENUM, "Left,Center,Right,Fill"), "set_horizontal_alignment", "get_horizontal_alignment");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "vertical_alignment", PROPERTY_HINT_ENUM, "Top,Center,Bottom"), "set_vertical_alignment", "get_vertical_alignment");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "uppercase"), "set_uppercase", "is_uppercase");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "line_spacing", PROPERTY_HINT_NONE, "suffix:px"), "set_line_spacing", "get_line_spacing");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "character_spacing", PROPERTY_HINT_NONE, "suffix:px"), "set_character_spacing", "get_character_spacing");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "autowrap_mode", PROPERTY_HINT_ENUM, "Off,Arbitrary,Word,Word (Smart)"), "set_autowrap_mode", "get_autowrap_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "autowrap_trim_flags", PROPERTY_HINT_FLAGS, vformat("Trim Spaces After Break:%d,Trim Spaces Before Break:%d", TextServer::BREAK_TRIM_START_EDGE_SPACES, TextServer::BREAK_TRIM_END_EDGE_SPACES)), "set_autowrap_trim_flags", "get_autowrap_trim_flags");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "justification_flags", PROPERTY_HINT_FLAGS, "Kashida Justification:1,Word Justification:2,Justify Only After Last Tab:8,Skip Last Line:32,Skip Last Line With Visible Characters:64,Do Not Skip Single Line:128"), "set_justification_flags", "get_justification_flags");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "width", PROPERTY_HINT_NONE, "suffix:px"), "set_width", "get_width");
+
+	ADD_GROUP("Shadow", "shadow_");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "shadow_color"), "set_shadow_color", "get_shadow_color");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "shadow_offset", PROPERTY_HINT_NONE, "suffix:px"), "set_shadow_offset", "get_shadow_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "shadow_outline_size", PROPERTY_HINT_RANGE, "0,127,0.01,suffix:px"), "set_shadow_outline_size", "get_shadow_outline_size");
 
 	ADD_GROUP("BiDi", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "text_direction", PROPERTY_HINT_ENUM, "Auto,Left-to-Right,Right-to-Left"), "set_text_direction", "get_text_direction");
@@ -329,11 +368,16 @@ Ref<TriangleMesh> Label3D::generate_triangle_mesh() const {
 	return triangle_mesh;
 }
 
-void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, int p_outline_size) {
+void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, float p_outline_size, bool p_outline_only) {
 	if (p_glyph.index == 0) {
 		r_offset.x += p_glyph.advance * pixel_size * p_glyph.repeat; // Non visual character, skip.
 		return;
 	}
+
+	// The glyph texture cache and surface batching are keyed by integer outline size.
+	// For MSDF fonts this is ignored by the cache (outline is drawn in-shader from the
+	// float `msdf_outline_size` below); for bitmap fonts the float truncates to pixels.
+	int p_outline_size_i = (int)Math::floor(p_outline_size);
 
 	Vector2 gl_of;
 	Vector2 gl_sz;
@@ -342,12 +386,12 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 	RID tex;
 
 	if (p_glyph.font_rid.is_valid()) {
-		tex = TS->font_get_glyph_texture_rid(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size), p_glyph.index);
+		tex = TS->font_get_glyph_texture_rid(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size_i), p_glyph.index);
 		if (tex.is_valid()) {
-			gl_of = (TS->font_get_glyph_offset(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size), p_glyph.index) + Vector2(p_glyph.x_off, p_glyph.y_off)) * pixel_size;
-			gl_sz = TS->font_get_glyph_size(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size), p_glyph.index) * pixel_size;
-			gl_uv = TS->font_get_glyph_uv_rect(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size), p_glyph.index);
-			texs = TS->font_get_glyph_texture_size(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size), p_glyph.index);
+			gl_of = (TS->font_get_glyph_offset(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size_i), p_glyph.index) + Vector2(p_glyph.x_off, p_glyph.y_off)) * pixel_size;
+			gl_sz = TS->font_get_glyph_size(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size_i), p_glyph.index) * pixel_size;
+			gl_uv = TS->font_get_glyph_uv_rect(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size_i), p_glyph.index);
+			texs = TS->font_get_glyph_texture_size(p_glyph.font_rid, Vector2i(p_glyph.font_size, p_outline_size_i), p_glyph.index);
 		}
 	} else if (((p_glyph.flags & TextServer::GRAPHEME_IS_VIRTUAL) != TextServer::GRAPHEME_IS_VIRTUAL) && ((p_glyph.flags & TextServer::GRAPHEME_IS_EMBEDDED_OBJECT) != TextServer::GRAPHEME_IS_EMBEDDED_OBJECT)) {
 		gl_sz = TS->get_hex_code_box_size(p_glyph.font_size, p_glyph.index) * pixel_size;
@@ -362,7 +406,7 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 	bool msdf = TS->font_is_multichannel_signed_distance_field(p_glyph.font_rid);
 
 	for (int j = 0; j < p_glyph.repeat; j++) {
-		SurfaceKey key = SurfaceKey(tex.get_id(), p_priority, p_outline_size);
+		SurfaceKey key = SurfaceKey(tex.get_id(), p_priority, p_outline_size_i, p_outline_only);
 		if (!surfaces.has(key)) {
 			SurfaceData surf;
 			surf.material = RenderingServer::get_singleton()->material_create();
@@ -381,6 +425,7 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 			if (msdf) {
 				RS::get_singleton()->material_set_param(surf.material, "msdf_pixel_range", TS->font_get_msdf_pixel_range(p_glyph.font_rid));
 				RS::get_singleton()->material_set_param(surf.material, "msdf_outline_size", p_outline_size);
+				RS::get_singleton()->material_set_param(surf.material, "msdf_outline_only", p_outline_only ? 1.0 : 0.0);
 			}
 
 			BaseMaterial3D::Transparency mat_transparency = BaseMaterial3D::Transparency::TRANSPARENCY_ALPHA;
@@ -401,7 +446,10 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 			if (get_alpha_cut_mode() == ALPHA_CUT_DISABLED) {
 				RS::get_singleton()->material_set_render_priority(surf.material, p_priority);
 			} else {
-				surf.z_shift = p_priority * pixel_size;
+				// Small Z step per priority just to keep the depth buffer ordering the
+				// layers (shadow/outline/text); a full pixel_size separates them enough to
+				// look detached at an angle, so use a small fraction of it.
+				surf.z_shift = p_priority * pixel_size * 0.1;
 			}
 
 			surfaces[key] = surf;
@@ -475,6 +523,12 @@ void Label3D::_shape() {
 	Ref<Font> font = _get_font_or_default();
 	ERR_FAIL_COND(font.is_null());
 
+	// BBCode styling produces multiple spans with per-span fonts/sizes, which the
+	// `dirty_font`-only fast path can't update correctly, so force a full reshape.
+	if (bbcode_enabled && dirty_font) {
+		dirty_text = true;
+	}
+
 	// Update text buffer.
 	if (dirty_text) {
 		TS->shaped_text_clear(text_rid);
@@ -482,13 +536,32 @@ void Label3D::_shape() {
 
 		const String &lang = language.is_empty() ? _get_locale() : language;
 		String txt = uppercase ? TS->string_to_upper(xl_text, lang) : xl_text;
-		TS->shaped_text_add_string(text_rid, txt, font->get_rids(), font_size, font->get_opentype_features(), lang);
+
+		// `visible_txt` is the text actually added to the shaped buffer. With BBCode it
+		// equals the concatenation of the styled spans (tags stripped), so the structured
+		// text / bidi override below operates on matching offsets.
+		String visible_txt = txt;
+
+		if (bbcode_enabled) {
+			Vector<StyleSpan> spans = _parse_bbcode(txt);
+			visible_txt = String();
+			for (const StyleSpan &span : spans) {
+				Ref<Font> span_font = _get_styled_font(span.bold, span.italics);
+				int span_size = (span.font_size > 0) ? span.font_size : font_size;
+				// Store the span color as meta so it can be resolved per-glyph at surface generation.
+				TS->shaped_text_add_string(text_rid, span.text, span_font->get_rids(), span_size, span_font->get_opentype_features(), lang, span.color);
+				visible_txt += span.text;
+			}
+		} else {
+			Ref<Font> shape_font = _get_styled_font(false, false);
+			TS->shaped_text_add_string(text_rid, txt, shape_font->get_rids(), font_size, font->get_opentype_features(), lang);
+		}
 
 		TypedArray<Vector3i> stt;
 		if (st_parser == TextServer::STRUCTURED_TEXT_CUSTOM) {
-			GDVIRTUAL_CALL(_structured_text_parser, st_args, txt, stt);
+			GDVIRTUAL_CALL(_structured_text_parser, st_args, visible_txt, stt);
 		} else {
-			stt = TS->parse_structured_text(st_parser, st_args, txt);
+			stt = TS->parse_structured_text(st_parser, st_args, visible_txt);
 		}
 		TS->shaped_text_set_bidi_override(text_rid, stt);
 
@@ -496,9 +569,10 @@ void Label3D::_shape() {
 		dirty_font = false;
 		dirty_lines = true;
 	} else if (dirty_font) {
+		Ref<Font> shape_font = _get_styled_font(false, false);
 		int spans = TS->shaped_get_span_count(text_rid);
 		for (int i = 0; i < spans; i++) {
-			TS->shaped_set_span_update_font(text_rid, i, font->get_rids(), font_size, font->get_opentype_features());
+			TS->shaped_set_span_update_font(text_rid, i, shape_font->get_rids(), font_size, font->get_opentype_features());
 		}
 
 		dirty_font = false;
@@ -607,17 +681,46 @@ void Label3D::_shape() {
 		}
 		offset.y -= TS->shaped_text_get_ascent(lines_rid[i]) * pixel_size;
 
-		if (outline_modulate.a != 0.0 && outline_size > 0) {
-			// Outline surfaces.
+		// Drop shadow surfaces (offset on the label plane, drawn behind everything else).
+		if (shadow_color.a != 0.0) {
+			int shadow_priority = MIN(render_priority, outline_render_priority) - 1;
+			Vector2 shadow_base = offset + Vector2(shadow_offset.x, -shadow_offset.y) * pixel_size;
+			if (shadow_outline_size > 0.0) {
+				Vector2 sh_offset = shadow_base;
+				for (int j = 0; j < gl_size; j++) {
+					_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, shadow_outline_size);
+				}
+			}
+			Vector2 sh_offset = shadow_base;
+			for (int j = 0; j < gl_size; j++) {
+				_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority);
+			}
+		}
+
+		// `outline_size_float` overrides the integer `outline_size` when set (!= 0),
+		// enabling sub-pixel outline width on MSDF fonts. For MSDF the outline is drawn
+		// as a band centered on the glyph edge (growing both outward and inward).
+		float eff_outline_size = (outline_size_float != 0.0) ? outline_size_float : (float)outline_size;
+		if (outline_modulate.a != 0.0 && eff_outline_size != 0.0) {
+			// Outline surfaces. Emitted as a ring (outline-only) for MSDF fonts so the
+			// outline does not occlude the text when drawn in front of it.
 			Vector2 ol_offset = offset;
 			for (int j = 0; j < gl_size; j++) {
-				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, outline_size);
+				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, eff_outline_size, true);
 			}
 		}
 
 		// Main text surfaces.
 		for (int j = 0; j < gl_size; j++) {
-			_generate_glyph_surfaces(glyphs[j], offset, modulate, render_priority);
+			Color glyph_modulate = modulate;
+			if (bbcode_enabled) {
+				// Span color is stored as meta and multiplies the base modulate.
+				Variant span_meta = TS->shaped_get_span_meta(lines_rid[i], glyphs[j].span_index);
+				if (span_meta.get_type() == Variant::COLOR) {
+					glyph_modulate = modulate * (Color)span_meta;
+				}
+			}
+			_generate_glyph_surfaces(glyphs[j], offset, glyph_modulate, render_priority);
 		}
 		offset.y -= (TS->shaped_text_get_descent(lines_rid[i]) + line_spacing) * pixel_size;
 	}
@@ -762,6 +865,228 @@ bool Label3D::is_uppercase() const {
 	return uppercase;
 }
 
+void Label3D::set_bbcode_enabled(bool p_enabled) {
+	if (bbcode_enabled != p_enabled) {
+		bbcode_enabled = p_enabled;
+		dirty_text = true;
+		_queue_update();
+	}
+}
+
+bool Label3D::is_bbcode_enabled() const {
+	return bbcode_enabled;
+}
+
+void Label3D::set_character_spacing(int p_spacing) {
+	if (character_spacing != p_spacing) {
+		character_spacing = p_spacing;
+		dirty_font = true;
+		_queue_update();
+	}
+}
+
+int Label3D::get_character_spacing() const {
+	return character_spacing;
+}
+
+void Label3D::set_bold_font(const Ref<Font> &p_font) {
+	if (bold_font_override != p_font) {
+		if (bold_font_override.is_valid()) {
+			bold_font_override->disconnect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		bold_font_override = p_font;
+		if (bold_font_override.is_valid()) {
+			bold_font_override->connect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		dirty_font = true;
+		_queue_update();
+	}
+}
+
+Ref<Font> Label3D::get_bold_font() const {
+	return bold_font_override;
+}
+
+void Label3D::set_italics_font(const Ref<Font> &p_font) {
+	if (italics_font_override != p_font) {
+		if (italics_font_override.is_valid()) {
+			italics_font_override->disconnect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		italics_font_override = p_font;
+		if (italics_font_override.is_valid()) {
+			italics_font_override->connect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		dirty_font = true;
+		_queue_update();
+	}
+}
+
+Ref<Font> Label3D::get_italics_font() const {
+	return italics_font_override;
+}
+
+void Label3D::set_bold_italics_font(const Ref<Font> &p_font) {
+	if (bold_italics_font_override != p_font) {
+		if (bold_italics_font_override.is_valid()) {
+			bold_italics_font_override->disconnect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		bold_italics_font_override = p_font;
+		if (bold_italics_font_override.is_valid()) {
+			bold_italics_font_override->connect_changed(callable_mp(this, &Label3D::_font_changed));
+		}
+		dirty_font = true;
+		_queue_update();
+	}
+}
+
+Ref<Font> Label3D::get_bold_italics_font() const {
+	return bold_italics_font_override;
+}
+
+Ref<Font> Label3D::_get_styled_font(bool p_bold, bool p_italics) const {
+	// Prefer a real font face for the requested emphasis; only synthesize what is
+	// not covered by an assigned override (mirrors RichTextLabel's fallback order).
+	Ref<Font> base_font;
+	bool synth_bold = p_bold;
+	bool synth_italics = p_italics;
+
+	if (p_bold && p_italics && bold_italics_font_override.is_valid()) {
+		base_font = bold_italics_font_override;
+		synth_bold = false;
+		synth_italics = false;
+	} else if (p_bold && bold_font_override.is_valid()) {
+		base_font = bold_font_override;
+		synth_bold = false; // Italics (if requested) is still synthesized.
+	} else if (p_italics && italics_font_override.is_valid()) {
+		base_font = italics_font_override;
+		synth_italics = false; // Bold (if requested) is still synthesized.
+	} else {
+		base_font = _get_font_or_default();
+	}
+
+	if (!synth_bold && !synth_italics && character_spacing == 0) {
+		return base_font;
+	}
+
+	// Lazily build and cache font variations (synthetic bold/italic + character spacing).
+	int idx = (p_bold ? 1 : 0) | (p_italics ? 2 : 0);
+	Ref<FontVariation> fv = styled_fonts[idx];
+	if (fv.is_null()) {
+		fv.instantiate();
+		styled_fonts[idx] = fv;
+	}
+	if (fv->get_base_font() != base_font) {
+		fv->set_base_font(base_font);
+	}
+	// Match the synthetic emphasis used by the default theme.
+	fv->set_variation_embolden(synth_bold ? 1.2 : 0.0);
+	fv->set_variation_transform(synth_italics ? Transform2D(1.0, 0.2, 0.0, 1.0, 0.0, 0.0) : Transform2D());
+	fv->set_spacing(TextServer::SPACING_GLYPH, character_spacing);
+	return fv;
+}
+
+Vector<Label3D::StyleSpan> Label3D::_parse_bbcode(const String &p_text) const {
+	Vector<StyleSpan> spans;
+
+	// Style stacks; the top of each stack is the currently active value.
+	Vector<Color> color_stack;
+	Vector<int> font_size_stack;
+	int bold_depth = 0;
+	int italics_depth = 0;
+
+	String pending;
+	auto flush = [&](void) {
+		if (pending.is_empty()) {
+			return;
+		}
+		StyleSpan span;
+		span.text = pending;
+		span.color = color_stack.is_empty() ? Color(1, 1, 1, 1) : color_stack[color_stack.size() - 1];
+		span.font_size = font_size_stack.is_empty() ? 0 : font_size_stack[font_size_stack.size() - 1];
+		span.bold = bold_depth > 0;
+		span.italics = italics_depth > 0;
+		spans.push_back(span);
+		pending = String();
+	};
+
+	int pos = 0;
+	int len = p_text.length();
+	while (pos < len) {
+		int open = p_text.find_char('[', pos);
+		if (open < 0) {
+			pending += p_text.substr(pos);
+			break;
+		}
+		int close = p_text.find_char(']', open);
+		if (close < 0) {
+			pending += p_text.substr(pos);
+			break;
+		}
+
+		// Append text before the tag.
+		pending += p_text.substr(pos, open - pos);
+
+		String tag = p_text.substr(open + 1, close - open - 1);
+		bool recognized = false;
+
+		if (tag == "b") {
+			flush();
+			bold_depth++;
+			recognized = true;
+		} else if (tag == "/b") {
+			flush();
+			bold_depth = MAX(0, bold_depth - 1);
+			recognized = true;
+		} else if (tag == "i") {
+			flush();
+			italics_depth++;
+			recognized = true;
+		} else if (tag == "/i") {
+			flush();
+			italics_depth = MAX(0, italics_depth - 1);
+			recognized = true;
+		} else if (tag == "/color") {
+			flush();
+			if (!color_stack.is_empty()) {
+				color_stack.remove_at(color_stack.size() - 1);
+			}
+			recognized = true;
+		} else if (tag == "/font_size") {
+			flush();
+			if (!font_size_stack.is_empty()) {
+				font_size_stack.remove_at(font_size_stack.size() - 1);
+			}
+			recognized = true;
+		} else if (tag.begins_with("color=")) {
+			flush();
+			color_stack.push_back(Color::from_string(tag.substr(6), Color(1, 1, 1, 1)));
+			recognized = true;
+		} else if (tag.begins_with("font_size=")) {
+			flush();
+			font_size_stack.push_back(tag.substr(10).to_int());
+			recognized = true;
+		}
+
+		if (recognized) {
+			pos = close + 1;
+		} else {
+			// Unknown tag: keep it as literal text.
+			pending += p_text.substr(open, close - open + 1);
+			pos = close + 1;
+		}
+	}
+	flush();
+
+	if (spans.is_empty()) {
+		// Ensure at least one (possibly empty) span so shaping still runs.
+		StyleSpan span;
+		span.text = String();
+		spans.push_back(span);
+	}
+
+	return spans;
+}
+
 void Label3D::set_render_priority(int p_priority) {
 	ERR_FAIL_COND(p_priority < RS::MATERIAL_RENDER_PRIORITY_MIN || p_priority > RS::MATERIAL_RENDER_PRIORITY_MAX);
 	if (render_priority != p_priority) {
@@ -879,6 +1204,50 @@ void Label3D::set_outline_size(int p_size) {
 
 int Label3D::get_outline_size() const {
 	return outline_size;
+}
+
+void Label3D::set_outline_size_float(float p_size) {
+	if (outline_size_float != p_size) {
+		outline_size_float = p_size;
+		_queue_update();
+	}
+}
+
+float Label3D::get_outline_size_float() const {
+	return outline_size_float;
+}
+
+void Label3D::set_shadow_color(const Color &p_color) {
+	if (shadow_color != p_color) {
+		shadow_color = p_color;
+		_queue_update();
+	}
+}
+
+Color Label3D::get_shadow_color() const {
+	return shadow_color;
+}
+
+void Label3D::set_shadow_offset(const Point2 &p_offset) {
+	if (shadow_offset != p_offset) {
+		shadow_offset = p_offset;
+		_queue_update();
+	}
+}
+
+Point2 Label3D::get_shadow_offset() const {
+	return shadow_offset;
+}
+
+void Label3D::set_shadow_outline_size(float p_size) {
+	if (shadow_outline_size != p_size) {
+		shadow_outline_size = p_size;
+		_queue_update();
+	}
+}
+
+float Label3D::get_shadow_outline_size() const {
+	return shadow_outline_size;
 }
 
 void Label3D::set_modulate(const Color &p_color) {
