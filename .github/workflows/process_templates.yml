@@ -37,9 +37,13 @@ jobs:
           BASE_VERSION="${{ env.GODOT_BASE_VERSION }}"
           BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
           SAFE_BRANCH=$(echo "${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHORT_SHA="${GITHUB_SHA:0:9}"
 
           if [[ "${BRANCH_NAME}" == "${BASE_VERSION}" ]]; then
-            UPLOAD_PATH="${BASE_VERSION}.stable"
+            # Immutable, SHA-tagged path matching the binary's own --version string
+            # (<ver>.stable.gh.<sha>). godot-explorer's xtask pins downloads to this exact path so a
+            # rebuild can never silently swap the artifact under a consumer.
+            UPLOAD_PATH="${BASE_VERSION}.stable.gh.${SHORT_SHA}"
           else
             UPLOAD_PATH="branches/${SAFE_BRANCH}"
           fi

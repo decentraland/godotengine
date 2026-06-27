@@ -57,7 +57,14 @@ jobs:
           submodules: recursive
 
       - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+        run: |
+          # macos-latest no longer reliably ships Xcode_16.2.app (the image rolls forward).
+          # Pick the newest installed Xcode 16.x, falling back to the newest Xcode available.
+          XCODE="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          [ -z "$XCODE" ] && XCODE="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
