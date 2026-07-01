@@ -220,18 +220,33 @@ RemoteDebuggerPeer *RemoteDebuggerPeerTCP::create_tcp(const String &p_uri) {
 		debug_host = debug_host.substr(0, sep_pos);
 	}
 
-	IPAddress ip;
-	if (debug_host.is_valid_ip_address()) {
-		ip = debug_host;
-	} else {
-		ip = IP::get_singleton()->resolve_hostname(debug_host);
+	// DCL: `debug_host` may be a comma-separated list of candidate IPs (the editor
+	// deploys every local IPv4 address). Try each until one connects.
+	Vector<String> hosts = debug_host.split(",", false);
+	for (int i = 0; i < hosts.size(); i++) {
+		String h = hosts[i].strip_edges();
+		if (h.is_empty()) {
+			continue;
+		}
+
+		IPAddress ip;
+		if (h.is_valid_ip_address()) {
+			ip = h;
+		} else {
+			ip = IP::get_singleton()->resolve_hostname(h);
+		}
+
+		Ref<StreamPeerTCP> stream;
+		stream.instantiate();
+		if (stream->connect_to_host(ip, debug_port) != OK) {
+			continue;
+		}
+		if (_try_connect(stream) == OK) {
+			return memnew(RemoteDebuggerPeerTCP(stream));
+		}
 	}
 
-	Ref<StreamPeerTCP> stream;
-	stream.instantiate();
-	ERR_FAIL_COND_V_MSG(stream->connect_to_host(ip, debug_port) != OK, nullptr, vformat("Remote Debugger: Unable to connect to host '%s:%d'.", debug_host, debug_port));
-	ERR_FAIL_COND_V(_try_connect(stream), nullptr);
-	return memnew(RemoteDebuggerPeerTCP(stream));
+	ERR_FAIL_V_MSG(nullptr, vformat("Remote Debugger: Unable to connect to any of '%s:%d'.", debug_host, debug_port));
 }
 
 RemoteDebuggerPeer *RemoteDebuggerPeerTCP::create_unix(const String &p_uri) {

@@ -30,6 +30,7 @@
 
 #include "editor_export_platform_apple_embedded.h"
 
+#include "core/io/ip.h"
 #include "core/io/json.h"
 #include "core/io/plist.h"
 #include "core/string/translation_server.h"
@@ -2671,7 +2672,32 @@ Error EditorExportPlatformAppleEmbedded::run(const Ref<EditorExportPreset> &p_pr
 	if (p_debug_flags.has_flag(DEBUG_FLAG_REMOTE_DEBUG)) {
 		cmd_args_list.push_back("--remote-debug");
 
-		cmd_args_list.push_back(get_debug_protocol() + host + ":" + String::num_int64(remote_port));
+		// DCL: pass every local IPv4 address (comma-separated) so the device tries
+		// each until one is reachable; the client connects to the first that answers
+		// (the editor server binds 0.0.0.0). Keep the forced localhost for adb-style /
+		// dumb-client deploys. IPv4 only: an IPv6 ':' would break host/port + comma
+		// parsing on the client.
+		String debug_host = host;
+		if (!p_debug_flags.has_flag(DEBUG_FLAG_REMOTE_DEBUG_LOCALHOST)) {
+			String ips;
+			List<IPAddress> local_ip;
+			IP::get_singleton()->get_local_addresses(&local_ip);
+			for (const IPAddress &ip : local_ip) {
+				String s = String(ip);
+				if (s.contains_char(':') || s.begins_with("127.") || s.begins_with("169.254.")) {
+					continue;
+				}
+				if (!ips.is_empty()) {
+					ips += ",";
+				}
+				ips += s;
+			}
+			if (!ips.is_empty()) {
+				debug_host = ips;
+			}
+		}
+
+		cmd_args_list.push_back(get_debug_protocol() + debug_host + ":" + String::num_int64(remote_port));
 
 		List<String> breakpoints;
 		ScriptEditor::get_singleton()->get_breakpoints(&breakpoints);

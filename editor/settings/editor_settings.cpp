@@ -1367,8 +1367,10 @@ void EditorSettings::setup_network() {
 
 	// Check that current remote_host is a valid interface address and populate hints.
 	for (const IPAddress &ip : local_ip) {
-		// link-local IPv6 addresses don't work, skipping them
-		if (String(ip).begins_with("fe80:0:0:0:")) { // fe80::/64
+		// DCL: only list IPv4 addresses. IPv6 (contains ':') breaks the remote-debug
+		// URI host/port parsing and the multi-host comma-separated list — and also
+		// covers the link-local fe80::/64 range that never worked here anyway.
+		if (String(ip).contains_char(':')) {
 			continue;
 		}
 		// Same goes for IPv4 link-local (APIPA) addresses.

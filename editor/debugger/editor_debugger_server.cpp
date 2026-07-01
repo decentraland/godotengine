@@ -94,7 +94,11 @@ Error EditorDebuggerServerTCP::start(const String &p_uri) {
 	// Try listening on ports
 	const int max_attempts = 5;
 	for (int attempt = 1;; ++attempt) {
-		const Error err = server->listen(bind_port, bind_host);
+		// DCL: always bind every interface (0.0.0.0) so both Android (loopback via
+		// adb reverse) and iOS (LAN) can reach the debugger, regardless of the
+		// configured `network/debug/remote_host`. Only the listen is forced; the
+		// reported endpoint below still reflects the setting.
+		const Error err = server->listen(bind_port, IPAddress("0.0.0.0"));
 		if (err == OK) {
 			break;
 		}
