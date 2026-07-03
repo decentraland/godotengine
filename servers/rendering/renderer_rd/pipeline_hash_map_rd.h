@@ -98,18 +98,41 @@ public:
 		compiled_queue_mutex.unlock();
 	}
 
-	// Start compilation of a pipeline ahead of time in the background. Returns true if the compilation was started, false if it wasn't required. Source is only used for collecting statistics.
+	// Issue #2002: Compile a pipeline SYNCHRONOUSLY on the calling thread instead of
+	// queuing a WorkerThreadPool task. Cross-thread pipeline compilation is the root
+	// cause of a hard main-thread freeze on iOS while loading heavy scenes (captured
+	// on iPhone 13). Whenever one thread has to WAIT for another to finish a pipeline
+	// compile, a deadlock can form, e.g.:
+	//   * mesh_generate_pipelines()'s foreground wait_for_pipeline() collaborative-
+	//     waits on a pool thread, re-entering the pool and starving the 3D physics
+	//     step that shares it; and
+	//   * freeing a shader whose pipelines are still compiling in the background —
+	//       BaseMaterial3D::flush_changes() -> _update_shader() (holds material_mutex)
+	//       -> free_rid(old shader) -> ~ShaderData() -> clear_pipelines()
+	//       -> _wait_for_all_pipelines() -> WorkerThreadPool::wait_for_task_completion()
+	//     blocks the MAIN thread on those tasks while a worker thread loading a mesh
+	//     is stuck on the same material_mutex. Permanent freeze.
+	// Compiling inline keeps compilation_tasks empty, so wait_for_pipeline() and
+	// _wait_for_all_pipelines() have nothing to wait on and NO cross-thread wait cycle
+	// can form. local_mutex is released BEFORE running creation_function so the creation
+	// function may safely re-enter the map for dependent pipelines. Trade-off: pipeline
+	// compilation becomes fully synchronous (serialized on the shader singleton mutex),
+	// so a heavy-scene load is slower and hitchier, but it always progresses instead of
+	// dead-locking. p_high_priority is unused now that there is no queue.
 	void compile_pipeline(const Key &p_key, uint32_t p_key_hash, RS::PipelineSource p_source, bool p_high_priority) {
 		DEV_ASSERT((creation_object != nullptr) && (creation_function != nullptr) && "Creation object and function was not set before attempting to compile a pipeline.");
 
-		MutexLock local_lock(local_mutex);
-		if (compilation_set.has(p_key_hash)) {
-			// Check if the pipeline was already submitted.
-			return;
-		}
+		{
+			MutexLock local_lock(local_mutex);
+			if (compilation_set.has(p_key_hash)) {
+				// Already compiled (or compiling inline on another thread). Its result
+				// is—or will imminently be—published to the compiled queue; skip.
+				return;
+			}
 
-		// Record the pipeline as submitted, a task can't be started for it again.
-		compilation_set.insert(p_key_hash);
+			// Record the pipeline as submitted, it won't be compiled again.
+			compilation_set.insert(p_key_hash);
+		}
 
 		if (compilations_mutex != nullptr) {
 			MutexLock compilations_lock(*compilations_mutex);
@@ -139,9 +162,11 @@ public:
 		print_line("HASH:", p_key_hash, "SOURCE:", source_name);
 #endif
 
-		// Queue a background compilation task.
-		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(creation_object, creation_function, p_key, p_high_priority, "PipelineCompilation");
-		compilation_tasks.insert(p_key_hash, task_id);
+		// Issue #2002: compile inline on this thread (local_mutex released above) rather
+		// than queuing a background pool task. Runs the same creation function a pool
+		// task would have run; it publishes the pipeline via add_compiled_pipeline().
+		(void)p_high_priority;
+		(creation_object->*creation_function)(p_key);
 	}
 
 	void wait_for_pipeline(uint32_t p_key_hash) {
