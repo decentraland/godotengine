@@ -218,12 +218,36 @@
 	self.godotLoadingOverlay.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
 
 	[self.view addSubview:self.godotLoadingOverlay];
+	// #2386: the Godot Metal rendering layer is added as a SUBLAYER later (during
+	// engine setup2), which composites it ABOVE this overlay subview by default — so
+	// the (soft, iOS-only) boot image draws on top of the overlay and the overlay
+	// never actually covers it. Force the overlay above the Metal layer via a high
+	// zPosition so it hides the boot frame throughout setup.
+	self.godotLoadingOverlay.layer.zPosition = 1000;
 #endif
 }
 
 - (BOOL)godotViewFinishedSetup:(GDTView *)view {
-	[self.godotLoadingOverlay removeFromSuperview];
+	// #2386: keep the crisp launch-screen overlay up a beat longer instead of
+	// removing it instantly. The engine boot image is drawn once on the
+	// not-yet-settled iOS swapchain (soft — iOS-only; Android renders it crisp),
+	// and the Godot SplashOverlay (crisp) only paints a frame later. Removing the
+	// overlay here exposes that soft boot frame for ~1 frame. Deferring the
+	// instant removal by a short beat lets the crisp SplashOverlay reach the
+	// screen behind the still-opaque overlay first, so the soft boot frame is
+	// never revealed. No fade — the overlay stays fully opaque, then drops.
+	// #2386: renderOnView presents the first SceneTree frame (the crisp Godot
+	// SplashOverlay) right after this returns, in the same drawView. Defer the
+	// removal a beat so that crisp frame is on screen before we drop the launch
+	// overlay — the soft iOS boot frame underneath is never revealed.
+	UIView *overlay = self.godotLoadingOverlay;
 	self.godotLoadingOverlay = nil;
+	if (overlay) {
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+				dispatch_get_main_queue(), ^{
+					[overlay removeFromSuperview];
+				});
+	}
 
 	return YES;
 }
