@@ -541,7 +541,11 @@ void vertex_shader(in vec3 vertex,
 	uvec2 omni_light_indices = instances.data[instance_index].omni_lights;
 	for (uint i = 0; i < omni_light_count; i++) {
 		uint light_index = (i > 3) ? ((omni_light_indices.y >> ((i - 4) * 8)) & 0xFF) : ((omni_light_indices.x >> (i * 8)) & 0xFF);
-		if (i > 0 && light_index == 0xFF) {
+		// 0xFF is the empty-slot sentinel. Slot 0 can also be 0xFF: a light paired
+		// with this instance but not processed this frame (e.g. toggled off between
+		// pairing and rendering) keeps the slot empty. Without robustBufferAccess
+		// (Mali), reading SSBO[255] is out of bounds and yields garbage/NaN.
+		if (light_index == 0xFF) {
 			break;
 		}
 
@@ -552,7 +556,8 @@ void vertex_shader(in vec3 vertex,
 	uvec2 spot_light_indices = instances.data[instance_index].spot_lights;
 	for (uint i = 0; i < spot_light_count; i++) {
 		uint light_index = (i > 3) ? ((spot_light_indices.y >> ((i - 4) * 8)) & 0xFF) : ((spot_light_indices.x >> (i * 8)) & 0xFF);
-		if (i > 0 && light_index == 0xFF) {
+		// See the omni loop above.
+		if (light_index == 0xFF) {
 			break;
 		}
 
@@ -2123,7 +2128,9 @@ void main() {
 	uvec2 omni_indices = instances.data[draw_call.instance_index].omni_lights;
 	for (uint i = 0; i < omni_light_count; i++) {
 		uint light_index = (i > 3) ? ((omni_indices.y >> ((i - 4) * 8)) & 0xFF) : ((omni_indices.x >> (i * 8)) & 0xFF);
-		if (i > 0 && light_index == 0xFF) {
+		// Slot 0 can also be the 0xFF empty-slot sentinel (stale pairing);
+		// SSBO[255] is out of bounds without robustBufferAccess (Mali).
+		if (light_index == 0xFF) {
 			break;
 		}
 
@@ -2155,7 +2162,8 @@ void main() {
 	uvec2 spot_indices = instances.data[draw_call.instance_index].spot_lights;
 	for (uint i = 0; i < spot_light_count; i++) {
 		uint light_index = (i > 3) ? ((spot_indices.y >> ((i - 4) * 8)) & 0xFF) : ((spot_indices.x >> (i * 8)) & 0xFF);
-		if (i > 0 && light_index == 0xFF) {
+		// See the omni loop above.
+		if (light_index == 0xFF) {
 			break;
 		}
 
