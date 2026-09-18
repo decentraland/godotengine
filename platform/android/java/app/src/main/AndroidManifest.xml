@@ -61,7 +61,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="mobile.dclexplorer.com" />
+                <data android:scheme="https" android:host="mobile.dclregenesislabs.xyz" />
             </intent-filter>
 
             <intent-filter android:autoVerify="true">
