@@ -356,12 +356,14 @@ String _get_activity_tag(const Ref<EditorExportPlatform> &p_export_platform, con
 							  "                <data android:scheme=\"decentraland\" />\n"
 							  "            </intent-filter>\n";
 
-	// App Links for mobile.dclregenesislabs.xyz
+	// App Links for mobile.dclregenesislabs.xyz (+ the legacy mobile.dclexplorer.com host, which
+	// links already shared / scheduled still use).
 	manifest_activity_text += "            <intent-filter android:autoVerify=\"true\">\n"
 							  "                <action android:name=\"android.intent.action.VIEW\" />\n"
 							  "                <category android:name=\"android.intent.category.DEFAULT\" />\n"
 							  "                <category android:name=\"android.intent.category.BROWSABLE\" />\n"
 							  "                <data android:scheme=\"https\" android:host=\"mobile.dclregenesislabs.xyz\" />\n"
+							  "                <data android:scheme=\"https\" android:host=\"mobile.dclexplorer.com\" />\n"
 							  "            </intent-filter>\n";
 
 	// App Links for decentraland.org (restricted to app-relevant paths)
