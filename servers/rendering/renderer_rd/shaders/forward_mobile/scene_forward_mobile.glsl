@@ -589,20 +589,25 @@ void vertex_shader(in vec3 vertex,
 		}
 
 		// Calculate the contribution from the shadowed light so we can scale the shadows accordingly.
-		half diff_avg = dot(diffuse_light.rgb, hvec3(0.33333));
-		half diff_dir_avg = dot(directional_diffuse, hvec3(0.33333));
-		if (diff_avg > half(0.0)) {
-			diffuse_light.a = diff_dir_avg / (diff_avg + diff_dir_avg);
+		// Compute the ratio in fp32: with fp16 subnormal inputs (a positional
+		// light barely grazing a vertex) the division produces NaN on Mali.
+		// Apple GPUs flush subnormals to zero, so the guard takes the safe path
+		// there. A NaN alpha turns into black triangles in the fragment shader's
+		// shadow mix: diffuse_light *= mix(1.0, shadow, diffuse_light_interp.a).
+		float diff_avg = dot(vec3(diffuse_light.rgb), vec3(0.33333));
+		float diff_dir_avg = dot(vec3(directional_diffuse), vec3(0.33333));
+		if (diff_avg > 0.0) {
+			diffuse_light.a = half(diff_dir_avg / (diff_avg + diff_dir_avg));
 		} else {
 			diffuse_light.a = half(1.0);
 		}
 
 		diffuse_light.rgb += directional_diffuse;
 
-		half spec_avg = dot(specular_light.rgb, hvec3(0.33333));
-		half spec_dir_avg = dot(directional_specular, hvec3(0.33333));
-		if (spec_avg > half(0.0)) {
-			specular_light.a = spec_dir_avg / (spec_avg + spec_dir_avg);
+		float spec_avg = dot(vec3(specular_light.rgb), vec3(0.33333));
+		float spec_dir_avg = dot(vec3(directional_specular), vec3(0.33333));
+		if (spec_avg > 0.0) {
+			specular_light.a = half(spec_dir_avg / (spec_avg + spec_dir_avg));
 		} else {
 			specular_light.a = half(1.0);
 		}
