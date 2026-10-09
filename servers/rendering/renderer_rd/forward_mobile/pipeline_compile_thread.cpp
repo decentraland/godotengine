@@ -32,6 +32,7 @@
 #include "scene_shader_forward_mobile.h"
 
 #include "core/object/worker_thread_pool.h"
+#include "core/profiling/profiling.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -89,6 +90,8 @@ void SceneShaderForwardMobile::PipelineCompileThread::enqueue(ShaderData *p_owne
 	job.hash = p_hash;
 	job.version = p_owner->version;
 	job.params = p_params;
+	job.profile_context = SceneShaderForwardMobile::pipeline_profile_context;
+	job.shader_name = p_owner->path.is_empty() ? String("<code>") : p_owner->path;
 
 	{
 		MutexLock lock(mutex);
@@ -226,6 +229,11 @@ void SceneShaderForwardMobile::PipelineCompileThread::_run() {
 
 		RID pipeline;
 		{
+			GodotProfileZoneStr("PipelineCompileThread::compile",
+					vformat("shader=%s version=%d ubershader=%d src=%d mesh=%d surface=%d material=%d",
+							job.shader_name, (int)job.params.key.version, (int)job.params.key.ubershader,
+							job.profile_context.source, job.profile_context.mesh_rid, job.profile_context.surface_index,
+							job.profile_context.material_rid));
 			const ShaderData::PipelineCreateParams &p = job.params;
 			pipeline = RD::get_singleton()->render_pipeline_create(p.shader, p.key.framebuffer_format_id, p.key.vertex_format_id, p.primitive, p.raster_state, p.multisample_state, p.depth_stencil_state, p.blend_state, 0, p.key.render_pass, p.specialization_constants);
 		}

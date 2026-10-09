@@ -34,6 +34,7 @@
 #include "core/os/os.h"
 #include "core/os/safe_binary_mutex.h"
 #include "core/os/thread_safe.h"
+#include "core/profiling/profiling.h"
 
 WorkerThreadPool::Task *const WorkerThreadPool::ThreadData::YIELDING = (Task *)1;
 
@@ -53,6 +54,7 @@ thread_local WorkerThreadPool::UnlockableLocks WorkerThreadPool::unlockable_lock
 #endif
 
 void WorkerThreadPool::_process_task(Task *p_task) {
+	GodotProfileZoneStr("WorkerThreadPool::task", p_task->description);
 #ifdef THREADS_ENABLED
 	int pool_thread_index = thread_ids[Thread::get_caller_id()];
 	ThreadData &curr_thread = threads[pool_thread_index];
@@ -399,6 +401,7 @@ bool WorkerThreadPool::is_task_completed(TaskID p_task_id) const {
 }
 
 Error WorkerThreadPool::wait_for_task_completion(TaskID p_task_id) {
+	GodotProfileZone("WorkerThreadPool::wait_for_task_completion");
 	task_mutex.lock();
 	Task **taskp = tasks.getptr(p_task_id);
 	if (!taskp) {
@@ -723,6 +726,7 @@ bool WorkerThreadPool::is_group_task_completed(GroupID p_group) const {
 }
 
 void WorkerThreadPool::wait_for_group_task_completion(GroupID p_group) {
+	GodotProfileZone("WorkerThreadPool::wait_for_group_task_completion");
 #ifdef THREADS_ENABLED
 	task_mutex.lock();
 	Group **groupp = groups.getptr(p_group);

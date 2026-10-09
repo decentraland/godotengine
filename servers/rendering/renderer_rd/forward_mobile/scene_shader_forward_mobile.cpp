@@ -32,6 +32,7 @@
 #include "core/config/project_settings.h"
 #include "core/math/math_defs.h"
 #include "core/object/worker_thread_pool.h"
+#include "core/profiling/profiling.h"
 #include "render_forward_mobile.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
@@ -292,6 +293,7 @@ Pair<ShaderRD *, RID> SceneShaderForwardMobile::ShaderData::get_native_shader_an
 	}
 }
 
+thread_local SceneShaderForwardMobile::PipelineProfileContext SceneShaderForwardMobile::pipeline_profile_context;
 
 bool SceneShaderForwardMobile::ShaderData::_build_pipeline_params(const PipelineKey &p_pipeline_key, PipelineCreateParams &r_params) {
 	RD::PipelineColorBlendState::Attachment blend_attachment = blend_mode_to_blend_attachment(BlendMode(blend_mode));
@@ -456,6 +458,11 @@ bool SceneShaderForwardMobile::ShaderData::_build_pipeline_params(const Pipeline
 }
 
 void SceneShaderForwardMobile::ShaderData::_create_pipeline(PipelineKey p_pipeline_key) {
+	GodotProfileZoneStr("SceneShaderForwardMobile::_create_pipeline",
+			vformat("shader=%s version=%d ubershader=%d src=%d mesh=%d surface=%d material=%d",
+					path.is_empty() ? String("<code>") : path, (int)p_pipeline_key.version, (int)p_pipeline_key.ubershader,
+					pipeline_profile_context.source, pipeline_profile_context.mesh_rid, pipeline_profile_context.surface_index,
+					pipeline_profile_context.material_rid));
 #if PRINT_PIPELINE_COMPILATION_KEYS
 	print_line(
 			"HASH:", p_pipeline_key.hash(),
@@ -571,6 +578,7 @@ bool SceneShaderForwardMobile::ShaderData::is_pending_nowait() {
 		return false; // Callers fall back as for any invalid shader.
 	}
 
+	GodotProfileZoneStr("ShaderRD::variant_not_ready", vformat("%s version=%d", path.is_empty() ? String("<code>") : path, version.get_id()));
 	RenderingServerDefault::redraw_request(); // Keeps polling in low-processor mode until the variants land.
 	return true;
 }
