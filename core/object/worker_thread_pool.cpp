@@ -897,13 +897,13 @@ void WorkerThreadPool::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_caller_group_id"), &WorkerThreadPool::get_caller_group_id);
 }
 
-WorkerThreadPool *WorkerThreadPool::get_named_pool(const StringName &p_name) {
+WorkerThreadPool *WorkerThreadPool::get_named_pool(const StringName &p_name, int p_thread_count) {
 	WorkerThreadPool **pool_ptr = named_pools.getptr(p_name);
 	if (pool_ptr) {
 		return *pool_ptr;
 	} else {
 		WorkerThreadPool *pool = memnew(WorkerThreadPool(false));
-		pool->init();
+		pool->init(p_thread_count);
 		named_pools[p_name] = pool;
 		return pool;
 	}

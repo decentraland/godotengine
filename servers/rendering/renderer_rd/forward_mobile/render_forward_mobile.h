@@ -555,6 +555,11 @@ protected:
 
 		GeometryInstanceSurfaceDataCache *surface_caches = nullptr;
 
+		// Draw readiness (render thread): last color-pass frame that drew a surface, last frame that skipped one.
+		uint64_t last_drawn_frame = 0;
+		uint64_t last_skip_frame = 0;
+		bool has_pending_surfaces = false;
+
 		// do we use this?
 		SelfList<GeometryInstanceForwardMobile> dirty_list_element;
 
@@ -573,6 +578,7 @@ protected:
 		virtual void pair_voxel_gi_instances(const RID *p_voxel_gi_instances, uint32_t p_voxel_gi_instance_count) override {}
 
 		virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) override;
+		virtual bool is_draw_ready() const override;
 	};
 
 	/* Rendering */

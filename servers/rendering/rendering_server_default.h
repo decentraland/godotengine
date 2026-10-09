@@ -933,6 +933,7 @@ public:
 	FUNC2(instance_geometry_set_transparency, RID, float)
 	FUNC3(instance_geometry_set_shader_parameter, RID, const StringName &, const Variant &)
 	FUNC2RC(Variant, instance_geometry_get_shader_parameter, RID, const StringName &)
+	FUNC1RC(bool, instance_geometry_is_draw_ready, RID)
 	FUNC2RC(Variant, instance_geometry_get_shader_parameter_default_value, RID, const StringName &)
 	FUNC2C(instance_geometry_get_shader_parameter_list, RID, List<PropertyInfo> *)
 

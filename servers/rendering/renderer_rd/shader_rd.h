@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/os/condition_variable.h"
 #include "core/os/mutex.h"
 #include "core/string/string_builder.h"
 #include "core/templates/hash_map.h"
@@ -76,6 +77,8 @@ private:
 		HashMap<StringName, CharString> code_sections;
 		Vector<CharString> custom_defines;
 		Vector<WorkerThreadPool::GroupID> group_compilation_tasks;
+		// Groups whose compile one thread waits for with the version mutex released (bit per group).
+		uint32_t group_waiting = 0;
 
 		Vector<Vector<uint8_t>> variant_data;
 		Vector<RID> variants;
@@ -97,7 +100,11 @@ private:
 	void _initialize_version(Version *p_version);
 	void _clear_version(Version *p_version);
 	void _compile_version_start(Version *p_version, int p_group);
+	WorkerThreadPool *compile_pool = nullptr;
+	WorkerThreadPool *_compile_pool() const { return compile_pool ? compile_pool : WorkerThreadPool::get_singleton(); }
 	void _compile_version_end(Version *p_version, int p_group);
+	void _compile_version_finish(Version *p_version, int p_group);
+	bool _compile_wait_unlocked(Version *p_version, int p_group, WorkerThreadPool::GroupID p_task);
 	void _compile_ensure_finished(Version *p_version);
 	void _allocate_placeholders(Version *p_version, int p_group);
 
@@ -125,6 +132,12 @@ private:
 	};
 
 	bool is_compute = false;
+
+	// When set, a SPIR-V group wait releases the version mutex so pollers and other versions' users never block on it.
+	bool unlocked_compile_wait = false;
+	BinaryMutex compile_wait_mutex;
+	ConditionVariable compile_wait_cv;
+	uint64_t compile_wait_generation = 0;
 
 	String name;
 
@@ -173,10 +186,24 @@ protected:
 public:
 	RID version_create(bool p_embedded = true);
 
-	void version_set_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_vertex_globals, const String &p_fragment_globals, const Vector<String> &p_custom_defines);
+	void version_set_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_vertex_globals, const String &p_fragment_globals, const Vector<String> &p_custom_defines, bool p_start_compile = true);
 	void version_set_compute_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_compute_globals, const Vector<String> &p_custom_defines);
 
-	_FORCE_INLINE_ RID version_get_shader(RID p_version, int p_variant) {
+	// Unlocks a mutex the caller locked once the version mutex is held, so a caller-wide lock is not kept
+	// across a SPIR-V compile wait (it would block threads that need other versions).
+	struct CallerMutexHandoff {
+		Mutex *mutex = nullptr;
+		void release() {
+			if (mutex != nullptr) {
+				mutex->unlock();
+				mutex = nullptr;
+			}
+		}
+		~CallerMutexHandoff() { release(); }
+	};
+
+	_FORCE_INLINE_ RID version_get_shader(RID p_version, int p_variant, Mutex *p_unlock_after_version_lock = nullptr) {
+		CallerMutexHandoff handoff{ p_unlock_after_version_lock };
 		ERR_FAIL_INDEX_V(p_variant, variant_defines.size(), RID());
 		ERR_FAIL_COND_V(!variants_enabled[p_variant], RID());
 
@@ -184,6 +211,7 @@ public:
 		ERR_FAIL_NULL_V(version, RID());
 
 		MutexLock lock(*version->mutex);
+		handoff.release();
 
 		if (version->dirty) {
 			_initialize_version(version);
@@ -208,7 +236,19 @@ public:
 		return version->variants[p_variant];
 	}
 
-	bool version_is_valid(RID p_version);
+	bool version_is_valid(RID p_version, Mutex *p_unlock_after_version_lock = nullptr);
+
+	enum VersionPoll {
+		VERSION_POLL_READY,
+		VERSION_POLL_PENDING, // Compiling, or the version mutex is busy.
+		VERSION_POLL_NOT_STARTED, // Dirty and p_allow_start was false.
+		VERSION_POLL_INVALID,
+	};
+	// Never blocks. Finishes groups whose tasks are done; starts a dirty version only when p_allow_start.
+	VersionPoll version_poll(RID p_version, bool p_allow_start, bool *r_started, Mutex *p_unlock_after_version_lock = nullptr);
+	void set_unlocked_compile_wait(bool p_enabled) { unlocked_compile_wait = p_enabled; }
+	// Must be set before any version starts compiling; null uses the shared pool.
+	void set_compile_pool(WorkerThreadPool *p_pool) { compile_pool = p_pool; }
 
 	bool version_free(RID p_version);
 

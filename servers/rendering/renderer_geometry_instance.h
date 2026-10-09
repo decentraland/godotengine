@@ -72,6 +72,9 @@ public:
 	virtual void pair_voxel_gi_instances(const RID *p_voxel_gi_instances, uint32_t p_voxel_gi_instance_count) = 0;
 
 	virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) = 0;
+
+	// False while a surface was left out or skipped because its shader or pipeline is not ready yet.
+	virtual bool is_draw_ready() const { return true; }
 };
 
 // Base implementation of RenderGeometryInstance shared by internal renderers.

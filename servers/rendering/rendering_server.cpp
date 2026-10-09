@@ -3272,6 +3272,7 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("instance_geometry_set_shader_parameter", "instance", "parameter", "value"), &RenderingServer::instance_geometry_set_shader_parameter);
 	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter", "instance", "parameter"), &RenderingServer::instance_geometry_get_shader_parameter);
+	ClassDB::bind_method(D_METHOD("instance_geometry_is_draw_ready", "instance"), &RenderingServer::instance_geometry_is_draw_ready);
 	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter_default_value", "instance", "parameter"), &RenderingServer::instance_geometry_get_shader_parameter_default_value);
 	ClassDB::bind_method(D_METHOD("instance_geometry_get_shader_parameter_list", "instance"), &RenderingServer::_instance_geometry_get_shader_parameter_list);
 
