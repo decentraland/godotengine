@@ -276,7 +276,7 @@ public:
 	}
 
 	// Note: Do not use this unless you know what you are doing, and it is absolutely necessary. Main thread pool (`get_singleton()`) should be preferred instead.
-	static WorkerThreadPool *get_named_pool(const StringName &p_name);
+	static WorkerThreadPool *get_named_pool(const StringName &p_name, int p_thread_count = -1);
 
 	static WorkerThreadPool *get_singleton() { return singleton; }
 	int get_thread_index() const;

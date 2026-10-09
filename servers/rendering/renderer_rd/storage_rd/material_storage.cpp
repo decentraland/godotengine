@@ -2232,6 +2232,7 @@ void MaterialStorage::_update_queued_materials() {
 		}
 	}
 
+	LocalVector<Material *> deferred;
 	while (SelfList<Material> *E = copy.first()) {
 		Material *material = E->self();
 		copy.remove(E);
@@ -2239,6 +2240,10 @@ void MaterialStorage::_update_queued_materials() {
 
 		if (material->data) {
 			uniforms_changed = material->data->update_parameters(material->params, material->uniform_dirty, material->texture_dirty);
+			if (material->data->update_deferred) {
+				deferred.push_back(material);
+				continue;
+			}
 		}
 		material->texture_dirty = false;
 		material->uniform_dirty = false;
@@ -2246,6 +2251,15 @@ void MaterialStorage::_update_queued_materials() {
 		if (uniforms_changed) {
 			//some implementations such as 3D renderer cache the material uniform set, so update is required
 			material->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MATERIAL);
+		}
+	}
+
+	if (!deferred.is_empty()) {
+		MutexLock lock(material_update_list_mutex);
+		for (Material *material : deferred) {
+			if (!material->update_element.in_list()) {
+				material_update_list.add(&material->update_element);
+			}
 		}
 	}
 }

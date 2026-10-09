@@ -347,7 +347,7 @@ void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_
 		void *mesh_surface = mesh_storage->mesh_get_surface(p_mesh, i);
 		void *mesh_surface_shadow = mesh_surface;
 		SceneShaderForwardMobile::MaterialData *material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(materials[i], RendererRD::MaterialStorage::SHADER_TYPE_3D));
-		if (material == nullptr || !material->shader_data->is_valid()) {
+		if (material == nullptr || material->shader_data->is_pending_nowait() || !material->shader_data->is_valid()) {
 			continue;
 		}
 
@@ -796,6 +796,7 @@ void RenderForwardMobile::_pre_opaque_render(RenderDataRD *p_render_data) {
 }
 
 void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
+	scene_shader.drain_async_pipeline_frees();
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
@@ -2330,6 +2331,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 	uint32_t prev_pipeline_hash = 0;
 
 	bool shadow_pass = (p_params->pass_mode == PASS_MODE_SHADOW) || (p_params->pass_mode == PASS_MODE_SHADOW_DP);
+	const uint64_t frame = RSG::rasterizer->get_frame_number();
 
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
 		const GeometryInstanceSurfaceDataCache *surf = p_params->elements[i];
@@ -2394,6 +2396,12 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 			continue;
 		}
 
+		if (shader->is_pending_nowait()) {
+			should_request_redraw = true;
+			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+			continue;
+		}
+
 		//request a redraw if one of the shaders uses TIME
 		if (shader->uses_time) {
 			should_request_redraw = true;
@@ -2454,6 +2462,8 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 		RID index_array_rd;
 		uint32_t ubershader_iterations = (disable_ubershaders ? 1 : 2);
 		bool pipeline_valid = false;
+		// With the async executor nothing waits here: no ubershader yet means the surface is skipped this frame.
+		const bool async_pipelines = scene_shader.pipeline_compile_thread != nullptr;
 		while (pipeline_key.ubershader < ubershader_iterations) {
 			// Skeleton and blend shape.
 			uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.ubershader);
@@ -2477,7 +2487,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 
 			if (shader != prev_shader || pipeline_hash != prev_pipeline_hash) {
 				RS::PipelineSource pipeline_source = pipeline_key.ubershader ? RS::PIPELINE_SOURCE_DRAW : RS::PIPELINE_SOURCE_SPECIALIZATION;
-				pipeline_rd = shader->pipeline_hash_map.get_pipeline(pipeline_key, pipeline_hash, pipeline_key.ubershader == (ubershader_iterations - 1), pipeline_source);
+				pipeline_rd = shader->pipeline_hash_map.get_pipeline(pipeline_key, pipeline_hash, !async_pipelines && pipeline_key.ubershader == (ubershader_iterations - 1), pipeline_source);
 
 				if (pipeline_rd.is_valid()) {
 					pipeline_valid = true;
@@ -2485,7 +2495,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 					prev_pipeline_hash = pipeline_hash;
 					break;
 				} else {
-					if (pipeline_key.ubershader == 1) {
+					if (pipeline_key.ubershader == 1 && !async_pipelines) {
 						// If ubershader failed to compile, retry specialized shader and wait for it to finish compilation.
 						// This prevents pop-in at the cost of shader compilation stutters.
 						pipeline_key.ubershader = 0;
@@ -2501,7 +2511,16 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 			}
 		}
 
+		if (!pipeline_valid && async_pipelines) {
+			should_request_redraw = true;
+			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+		}
+
 		if (pipeline_valid) {
+			if constexpr (p_pass_mode == PASS_MODE_COLOR || p_pass_mode == PASS_MODE_COLOR_TRANSPARENT) {
+				const_cast<GeometryInstanceForwardMobile *>(inst)->last_drawn_frame = frame;
+			}
+
 			if (!emulate_point_size) {
 				index_array_rd = mesh_storage->mesh_surface_get_index_array(mesh_surface, element_info.lod_index);
 			} else {
@@ -2704,6 +2723,16 @@ void RenderForwardMobile::GeometryInstanceForwardMobile::set_softshadow_projecto
 	use_soft_shadow = p_softshadow;
 }
 
+bool RenderForwardMobile::GeometryInstanceForwardMobile::is_draw_ready() const {
+	if (dirty_list_element.in_list() || has_pending_surfaces) {
+		return false;
+	}
+	if (surface_caches == nullptr) {
+		return true;
+	}
+	return last_drawn_frame != 0 && last_drawn_frame > last_skip_frame;
+}
+
 void RenderForwardMobile::GeometryInstanceForwardMobile::_mark_dirty() {
 	if (dirty_list_element.in_list()) {
 		return;
@@ -2878,6 +2907,13 @@ void RenderForwardMobile::_geometry_instance_add_surface_with_material_chain(Geo
 	while (material->next_pass.is_valid()) {
 		RID next_pass = material->next_pass;
 		material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(next_pass, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+		if (material && material->is_pending_nowait()) {
+			ginstance->has_pending_surfaces = true;
+			if (ginstance->data->dirty_dependencies) {
+				material_storage->material_update_dependency(next_pass, &ginstance->data->dependency_tracker);
+			}
+			break;
+		}
 		if (!material || !material->shader_data->is_valid()) {
 			break;
 		}
@@ -2898,6 +2934,14 @@ void RenderForwardMobile::_geometry_instance_add_surface(GeometryInstanceForward
 
 	if (m_src.is_valid()) {
 		material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(m_src, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+		if (material && material->is_pending_nowait()) {
+			// Leave the surface out until the material update lands; its changed_notify rebuilds this instance.
+			ginstance->has_pending_surfaces = true;
+			if (ginstance->data->dirty_dependencies) {
+				material_storage->material_update_dependency(m_src, &ginstance->data->dependency_tracker);
+			}
+			return;
+		}
 		if (!material || !material->shader_data->is_valid()) {
 			material = nullptr;
 		}
@@ -2920,7 +2964,12 @@ void RenderForwardMobile::_geometry_instance_add_surface(GeometryInstanceForward
 		m_src = ginstance->data->material_overlay;
 
 		material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(m_src, RendererRD::MaterialStorage::SHADER_TYPE_3D));
-		if (material && material->shader_data->is_valid()) {
+		if (material && material->is_pending_nowait()) {
+			ginstance->has_pending_surfaces = true;
+			if (ginstance->data->dirty_dependencies) {
+				material_storage->material_update_dependency(m_src, &ginstance->data->dependency_tracker);
+			}
+		} else if (material && material->shader_data->is_valid()) {
 			if (ginstance->data->dirty_dependencies) {
 				material_storage->material_update_dependency(m_src, &ginstance->data->dependency_tracker);
 			}
@@ -2934,6 +2983,10 @@ void RenderForwardMobile::_geometry_instance_update(RenderGeometryInstance *p_ge
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RendererRD::ParticlesStorage *particles_storage = RendererRD::ParticlesStorage::get_singleton();
 	GeometryInstanceForwardMobile *ginstance = static_cast<GeometryInstanceForwardMobile *>(p_geometry_instance);
+
+	// Surfaces are rebuilt: readiness needs a fresh color draw.
+	ginstance->last_drawn_frame = 0;
+	ginstance->has_pending_surfaces = false;
 
 	if (ginstance->data->dirty_dependencies) {
 		ginstance->data->dependency_tracker.update_begin();
@@ -3303,6 +3356,9 @@ void RenderForwardMobile::_mesh_compile_pipelines_for_surface(const SurfacePipel
 }
 
 void RenderForwardMobile::_mesh_generate_all_pipelines_for_surface_cache(GeometryInstanceSurfaceDataCache *p_surface_cache, const GlobalPipelineData &p_global) {
+	if (p_surface_cache->shader->is_pending_nowait() || p_surface_cache->shader_shadow->is_pending_nowait()) {
+		return; // Compiled at draw time once the SPIR-V is ready.
+	}
 	bool uses_alpha_pass = (p_surface_cache->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) != 0;
 	SurfacePipelineData surface;
 	surface.mesh_surface = p_surface_cache->surface;
@@ -3427,7 +3483,7 @@ void RenderForwardMobile::_update_shader_quality_settings() {
 RenderForwardMobile::RenderForwardMobile() {
 	singleton = this;
 
-	disable_ubershaders = RD::get_singleton()->get_driver_workarounds().disable_ubershaders;
+	disable_ubershaders = RD::get_singleton()->get_driver_workarounds().disable_ubershaders || bool(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/disable_ubershaders"));
 	if (disable_ubershaders) {
 		print_verbose("Ubershaders: Disabled");
 	} else {
@@ -3478,7 +3534,17 @@ RenderForwardMobile::RenderForwardMobile() {
 	}
 #endif
 
+	// A dedicated pool keeps scene SPIR-V bursts from taking every worker the render cull and
+	// physics need. Set before init: the default shaders start compiling there.
+	const int shader_compile_threads = GLOBAL_GET("rendering/rendering_device/pipeline_compilation/shader_compile_threads");
+	if (shader_compile_threads > 0) {
+		scene_shader.shader.set_compile_pool(WorkerThreadPool::get_named_pool(SNAME("SceneShaderCompilation"), shader_compile_threads));
+	}
 	scene_shader.init(defines);
+	scene_shader.set_async_pipeline_compilation(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/async_executor"));
+	print_verbose(vformat("Async pipeline executor: %s", scene_shader.pipeline_compile_thread != nullptr ? "Enabled" : "Disabled"));
+	scene_shader.set_async_shader_variants(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/async_shader_variants"), uint32_t(int(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/max_new_shader_versions_per_frame"))));
+	print_verbose(vformat("Async shader variants: %s (max new versions per frame: %d)", scene_shader.async_shader_variants ? "Enabled" : "Disabled", scene_shader.max_new_shader_versions_per_frame));
 
 	_update_shader_quality_settings();
 	_update_global_pipeline_data_requirements_from_project();

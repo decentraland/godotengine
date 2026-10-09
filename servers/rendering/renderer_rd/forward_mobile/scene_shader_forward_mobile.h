@@ -31,6 +31,10 @@
 #pragma once
 
 #include "../storage_rd/material_storage.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
+#include "core/templates/list.h"
+#include "core/templates/safe_refcount.h"
 #include "servers/rendering/renderer_rd/pipeline_hash_map_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_mobile/scene_forward_mobile.glsl.gen.h"
 
@@ -218,8 +222,26 @@ public:
 			}
 		};
 
+		struct PipelineCreateParams {
+			RID shader;
+			PipelineKey key;
+			RD::RenderPrimitive primitive = RD::RENDER_PRIMITIVE_TRIANGLES;
+			RD::PipelineRasterizationState raster_state;
+			RD::PipelineMultisampleState multisample_state;
+			RD::PipelineDepthStencilState depth_stencil_state;
+			RD::PipelineColorBlendState blend_state;
+			Vector<RD::PipelineSpecializationConstant> specialization_constants;
+		};
+
+		bool _build_pipeline_params(const PipelineKey &p_pipeline_key, PipelineCreateParams &r_params);
 		void _create_pipeline(PipelineKey p_pipeline_key);
+		bool _enqueue_pipeline(const PipelineKey &p_pipeline_key, uint32_t p_hash, RS::PipelineSource p_source);
+		void _promote_pipeline(uint32_t p_hash);
+		void _clear_pipelines();
+		void _free_version();
 		PipelineHashMapRD<PipelineKey, ShaderData, void (ShaderData::*)(PipelineKey)> pipeline_hash_map;
+		// Owner id on the async pipeline compiler, guarded by its mutex. 0 = not registered.
+		uint32_t async_owner_token = 0;
 
 		RID version;
 
@@ -310,12 +332,69 @@ public:
 		RID get_shader_variant(ShaderVersion p_shader_version, bool p_ubershader) const;
 		uint64_t get_vertex_input_mask(ShaderVersion p_shader_version, bool p_ubershader);
 		bool is_valid() const;
+		// With async_shader_variants on a non-pool thread: true while the SPIR-V is not ready (never waits).
+		bool is_pending_nowait();
+		SafeFlag variants_ready;
 
 		SelfList<ShaderData> shader_list_element;
 
 		ShaderData();
 		virtual ~ShaderData();
 	};
+
+	// Compiles scene pipelines requested by non-pool threads on one dedicated thread. Nobody waits
+	// for it: callers draw with a fallback or skip the draw, and results land in the owner's map.
+	class PipelineCompileThread {
+		struct Job {
+			uint32_t owner_token = 0;
+			uint32_t hash = 0;
+			RID version;
+			ShaderData::PipelineCreateParams params;
+		};
+
+		Mutex mutex;
+		Semaphore semaphore;
+		Thread thread;
+		bool exit = false;
+		List<Job> high_queue;
+		List<Job> low_queue;
+		HashMap<uint64_t, List<Job>::Element *> low_index;
+		HashMap<uint32_t, ShaderData *> owners;
+		uint32_t last_token = 0;
+		RID running_version;
+		LocalVector<RID> version_graveyard;
+		LocalVector<RID> pipelines_to_free;
+
+		static uint64_t _low_key(uint32_t p_token, uint32_t p_hash) { return (uint64_t(p_token) << 32) | p_hash; }
+		void _cancel_jobs_locked(uint32_t p_token);
+		static void _thread_func(void *p_self);
+		void _run();
+
+	public:
+		void enqueue(ShaderData *p_owner, const ShaderData::PipelineCreateParams &p_params, uint32_t p_hash, bool p_high_priority);
+		void promote(ShaderData *p_owner, uint32_t p_hash);
+		void unregister_owner(ShaderData *p_owner);
+		bool retire_version_if_busy(RID p_version);
+		void drain_deferred_frees();
+
+		PipelineCompileThread();
+		~PipelineCompileThread();
+	};
+
+	PipelineCompileThread *pipeline_compile_thread = nullptr;
+
+	// Frame-thread SPIR-V handling: no waits for new shader versions, and at most N version compiles started per frame.
+	bool async_shader_variants = false;
+	uint32_t max_new_shader_versions_per_frame = 0;
+	BinaryMutex shader_start_mutex;
+	uint64_t shader_start_frame = UINT64_MAX;
+	uint32_t shader_starts_in_frame = 0;
+	void set_async_shader_variants(bool p_enabled, uint32_t p_max_new_versions_per_frame);
+	bool _is_nowait_thread() const;
+	bool _shader_start_allowed();
+	void _shader_start_taken();
+	void set_async_pipeline_compilation(bool p_enabled);
+	void drain_async_pipeline_frees();
 
 	RendererRD::MaterialStorage::ShaderData *_create_shader_func();
 	static RendererRD::MaterialStorage::ShaderData *_create_shader_funcs() {
@@ -332,6 +411,7 @@ public:
 		virtual void set_render_priority(int p_priority);
 		virtual void set_next_pass(RID p_pass);
 		virtual bool update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty);
+		_FORCE_INLINE_ bool is_pending_nowait() { return update_deferred || shader_data->is_pending_nowait(); }
 		virtual ~MaterialData();
 	};
 
