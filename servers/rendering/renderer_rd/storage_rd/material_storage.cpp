@@ -29,6 +29,8 @@
 /**************************************************************************/
 
 #include "material_storage.h"
+
+#include "core/profiling/profiling.h"
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
@@ -2236,6 +2238,7 @@ void MaterialStorage::_update_queued_materials() {
 	while (SelfList<Material> *E = copy.first()) {
 		Material *material = E->self();
 		copy.remove(E);
+		GodotProfileZoneStr("MaterialStorage::update", vformat("rid=%d", material->self.get_id()));
 		bool uniforms_changed = false;
 
 		if (material->data) {

@@ -33,6 +33,7 @@
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
+#include "core/profiling/profiling.h"
 #include "core/version.h"
 #include "scene/main/scene_tree.h"
 
@@ -414,6 +415,7 @@ bool ShaderMaterial::_property_get_revert(const StringName &p_name, Variant &r_p
 }
 
 void ShaderMaterial::set_shader(const Ref<Shader> &p_shader) {
+	GodotProfileZoneStr("ShaderMaterial::set_shader", vformat("%s shader=%s rid=%d", get_path(), p_shader.is_valid() ? p_shader->get_path() : String(), _get_material().get_id()));
 	// Only connect/disconnect the signal when running in the editor.
 	// This can be a slow operation, and `notify_property_list_changed()` (which is called by `_shader_changed()`)
 	// does nothing in non-editor builds anyway. See GH-34741 for details.
@@ -683,6 +685,7 @@ void BaseMaterial3D::finish_shaders() {
 }
 
 void BaseMaterial3D::_update_shader() {
+	GodotProfileZoneStr("BaseMaterial3D::_update_shader", vformat("%s rid=%d", get_path(), _get_material().get_id()));
 	if (!_is_initialized()) {
 		_mark_ready();
 	}

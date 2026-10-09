@@ -36,6 +36,43 @@
 #include "core/os/mutex.h"
 #include "core/templates/paged_allocator.h"
 
+#include <tracy/TracyC.h>
+
+#include <string.h>
+
+namespace {
+constexpr int DYNAMIC_ZONE_MAX_DEPTH = 64;
+thread_local TracyCZoneCtx dynamic_zone_stack[DYNAMIC_ZONE_MAX_DEPTH];
+thread_local int dynamic_zone_depth = 0;
+} // namespace
+
+void godot_profiler_zone_begin(const char *p_name, const char *p_text) {
+	if (dynamic_zone_depth < DYNAMIC_ZONE_MAX_DEPTH) {
+		const char *name = p_name ? p_name : "zone";
+		uint64_t srcloc = ___tracy_alloc_srcloc_name(0, "gdextension", 11, "zone", 4, name, strlen(name), 0);
+		TracyCZoneCtx ctx = ___tracy_emit_zone_begin_alloc(srcloc, 1);
+		if (p_text && *p_text) {
+			___tracy_emit_zone_text(ctx, p_text, strlen(p_text));
+		}
+		dynamic_zone_stack[dynamic_zone_depth] = ctx;
+	}
+	dynamic_zone_depth++;
+}
+
+void godot_profiler_zone_end() {
+	if (dynamic_zone_depth <= 0) {
+		return;
+	}
+	dynamic_zone_depth--;
+	if (dynamic_zone_depth < DYNAMIC_ZONE_MAX_DEPTH) {
+		___tracy_emit_zone_end(dynamic_zone_stack[dynamic_zone_depth]);
+	}
+}
+
+bool godot_profiler_is_enabled() {
+	return true;
+}
+
 namespace tracy {
 static bool configured = false;
 
@@ -197,10 +234,99 @@ void godot_cleanup_profiler() {
 #elif defined(GODOT_USE_PERFETTO)
 PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
+#include "core/os/mutex.h"
+#include "core/templates/hash_map.h"
+
+namespace godot_profiling {
+
+constexpr int SCRIPT_ZONE_MAX_DEPTH = 8;
+thread_local int script_zone_depth = 0;
+
+// Interned "<file>:<function>" names; never freed so perfetto can treat them as static.
+static BinaryMutex script_names_mutex;
+static HashMap<const void *, const char *> script_names;
+
+static const char *intern_script_name(const void *p_function, const StringName &p_file, const StringName &p_name) {
+	MutexLock lock(script_names_mutex);
+	const char **found = script_names.getptr(p_function);
+	if (found) {
+		return *found;
+	}
+	CharString utf8 = (p_file.operator String() + ":" + p_name.operator String()).utf8();
+	char *copy = (char *)memalloc(utf8.length() + 1);
+	memcpy(copy, utf8.get_data(), utf8.length() + 1);
+	script_names.insert(p_function, copy);
+	return copy;
+}
+
+ScriptZone::ScriptZone(const void *p_function, const StringName &p_file, const StringName &p_name) {
+	if (script_zone_depth < SCRIPT_ZONE_MAX_DEPTH && TRACE_EVENT_CATEGORY_ENABLED("godot")) {
+		TRACE_EVENT_BEGIN("godot", perfetto::StaticString{ intern_script_name(p_function, p_file, p_name) });
+		active = true;
+	}
+	script_zone_depth++;
+}
+
+ScriptZone::~ScriptZone() {
+	script_zone_depth--;
+	if (active) {
+		TRACE_EVENT_END("godot");
+	}
+}
+
+static BinaryMutex name_zones_mutex;
+static HashMap<const void *, const char *> name_zones;
+
+NameZone::NameZone(const StringName &p_name) {
+	if (!TRACE_EVENT_CATEGORY_ENABLED("godot")) {
+		return;
+	}
+	const void *key = p_name.data_unique_pointer();
+	const char *name = nullptr;
+	{
+		MutexLock lock(name_zones_mutex);
+		const char **found = name_zones.getptr(key);
+		if (found) {
+			name = *found;
+		} else {
+			CharString utf8 = p_name.operator String().utf8();
+			char *copy = (char *)memalloc(utf8.length() + 1);
+			memcpy(copy, utf8.get_data(), utf8.length() + 1);
+			name_zones.insert(key, copy);
+			name = copy;
+		}
+	}
+	TRACE_EVENT_BEGIN("godot", perfetto::StaticString{ name });
+	active = true;
+}
+
+NameZone::~NameZone() {
+	if (active) {
+		TRACE_EVENT_END("godot");
+	}
+}
+
+} // namespace godot_profiling
+
+void godot_profiler_zone_begin(const char *p_name, const char *p_text) {
+	TRACE_EVENT_BEGIN("godot", perfetto::DynamicString{ p_name ? p_name : "zone" }, "text", p_text ? p_text : "");
+}
+
+void godot_profiler_zone_end() {
+	TRACE_EVENT_END("godot");
+}
+
+bool godot_profiler_is_enabled() {
+	return true;
+}
+
 void godot_init_profiler() {
 	perfetto::TracingInitArgs args;
 
 	args.backends |= perfetto::kSystemBackend;
+	// The default 256 KB shared buffer overflows at ~10k events/s.
+	args.shmem_size_hint_kb = 16384;
+	args.shmem_page_size_hint_kb = 32;
 
 	perfetto::Tracing::Initialize(args);
 	perfetto::TrackEvent::Register();
@@ -217,7 +343,36 @@ namespace apple::instruments {
 os_log_t LOG;
 os_log_t LOG_TRACING;
 
+constexpr int DYNAMIC_ZONE_MAX_DEPTH = 64;
+thread_local os_signpost_id_t dynamic_zone_stack[DYNAMIC_ZONE_MAX_DEPTH];
+thread_local int dynamic_zone_depth = 0;
+
 } // namespace apple::instruments
+
+void godot_profiler_zone_begin(const char *p_name, const char *p_text) {
+	using namespace apple::instruments;
+	if (dynamic_zone_depth < DYNAMIC_ZONE_MAX_DEPTH) {
+		os_signpost_id_t id = os_signpost_id_generate(LOG_TRACING);
+		os_signpost_interval_begin(LOG_TRACING, id, "zone", "%{public}s %{public}s", p_name ? p_name : "zone", p_text ? p_text : "");
+		dynamic_zone_stack[dynamic_zone_depth] = id;
+	}
+	dynamic_zone_depth++;
+}
+
+void godot_profiler_zone_end() {
+	using namespace apple::instruments;
+	if (dynamic_zone_depth <= 0) {
+		return;
+	}
+	dynamic_zone_depth--;
+	if (dynamic_zone_depth < DYNAMIC_ZONE_MAX_DEPTH) {
+		os_signpost_interval_end(LOG_TRACING, dynamic_zone_stack[dynamic_zone_depth], "zone");
+	}
+}
+
+bool godot_profiler_is_enabled() {
+	return true;
+}
 
 void godot_init_profiler() {
 	static bool initialized = false;
@@ -243,5 +398,15 @@ void godot_init_profiler() {
 
 void godot_cleanup_profiler() {
 	// Stub
+}
+
+void godot_profiler_zone_begin(const char *p_name, const char *p_text) {
+}
+
+void godot_profiler_zone_end() {
+}
+
+bool godot_profiler_is_enabled() {
+	return false;
 }
 #endif

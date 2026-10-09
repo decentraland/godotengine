@@ -32,6 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/debugger/engine_debugger.h"
+#include "core/profiling/profiling.h"
 #include "core/templates/pair.h"
 #include "core/templates/sort_array.h"
 #include "scene/gui/control.h"
@@ -748,6 +749,7 @@ void Viewport::_notification(int p_what) {
 
 #if !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)
 void Viewport::_process_picking() {
+	GodotProfileZone("Viewport::_process_picking");
 	if (!is_inside_tree()) {
 		return;
 	}

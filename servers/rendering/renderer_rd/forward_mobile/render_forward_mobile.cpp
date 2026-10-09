@@ -30,6 +30,7 @@
 
 #include "render_forward_mobile.h"
 #include "core/config/project_settings.h"
+#include "core/profiling/profiling.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/mesh_storage.h"
@@ -333,6 +334,8 @@ void RenderForwardMobile::setup_render_buffer_data(Ref<RenderSceneBuffersRD> p_r
 }
 
 void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) {
+	GodotProfileZoneStr("RenderForwardMobile::mesh_generate_pipelines", vformat("mesh=%d", p_mesh.get_id()));
+	SceneShaderForwardMobile::pipeline_profile_context = { p_mesh.get_id(), 0, 0, (int)RS::PIPELINE_SOURCE_MESH };
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RID shadow_mesh = mesh_storage->mesh_get_shadow_mesh(p_mesh);
@@ -738,6 +741,7 @@ void RenderForwardMobile::_setup_lightmaps(const RenderDataRD *p_render_data, co
 }
 
 void RenderForwardMobile::_pre_opaque_render(RenderDataRD *p_render_data) {
+	GodotProfileZone("RenderForwardMobile::_pre_opaque_render");
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 
 	p_render_data->cube_shadows.clear();
@@ -796,6 +800,7 @@ void RenderForwardMobile::_pre_opaque_render(RenderDataRD *p_render_data) {
 }
 
 void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
+	GodotProfileZone("RenderForwardMobile::_render_scene");
 	scene_shader.drain_async_pipeline_frees();
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
@@ -1366,6 +1371,7 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 /* these are being called from RendererSceneRenderRD::_pre_opaque_render */
 
 void RenderForwardMobile::_render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingMethod::RenderInfo *p_render_info, const Transform3D &p_main_cam_transform) {
+	GodotProfileZone("RenderForwardMobile::_render_shadow_pass");
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 
 	ERR_FAIL_COND(!light_storage->owns_light_instance(p_light));
@@ -1551,6 +1557,7 @@ void RenderForwardMobile::_render_shadow_begin() {
 }
 
 void RenderForwardMobile::_render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, const Rect2i &p_rect, bool p_flip_y, bool p_clear_region, bool p_begin, bool p_end, RenderingMethod::RenderInfo *p_render_info, const Transform3D &p_main_cam_transform) {
+	GodotProfileZone("RenderForwardMobile::_render_shadow_append");
 	SceneState::ShadowPass shadow_pass;
 
 	if (p_render_info) {
@@ -2058,6 +2065,7 @@ _FORCE_INLINE_ static uint32_t _indices_to_primitives(RS::PrimitiveType p_primit
 }
 
 void RenderForwardMobile::_fill_render_list(RenderListType p_render_list, const RenderDataRD *p_render_data, PassMode p_pass_mode, bool p_append) {
+	GodotProfileZone("RenderForwardMobile::_fill_render_list");
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 
 	if (p_render_list == RENDER_LIST_OPAQUE) {
@@ -2294,6 +2302,7 @@ void RenderForwardMobile::_render_list(RenderingDevice::DrawListID p_draw_list, 
 }
 
 void RenderForwardMobile::_render_list_with_draw_list(RenderListParameters *p_params, RID p_framebuffer, BitField<RD::DrawFlags> p_draw_flags, const Vector<Color> &p_clear_color_values, float p_clear_depth_value, uint32_t p_clear_stencil_value, const Rect2 &p_region) {
+	GodotProfileZone("RenderForwardMobile::_render_list_with_draw_list");
 	RD::FramebufferFormatID fb_format = RD::get_singleton()->framebuffer_get_format(p_framebuffer);
 	p_params->framebuffer_format = fb_format;
 
@@ -2331,6 +2340,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 	uint32_t prev_pipeline_hash = 0;
 
 	bool shadow_pass = (p_params->pass_mode == PASS_MODE_SHADOW) || (p_params->pass_mode == PASS_MODE_SHADOW_DP);
+	uint32_t skipped_draws = 0;
 	const uint64_t frame = RSG::rasterizer->get_frame_number();
 
 	for (uint32_t i = p_from_element; i < p_to_element; i++) {
@@ -2397,6 +2407,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 		}
 
 		if (shader->is_pending_nowait()) {
+			skipped_draws++;
 			should_request_redraw = true;
 			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
 			continue;
@@ -2487,7 +2498,9 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 
 			if (shader != prev_shader || pipeline_hash != prev_pipeline_hash) {
 				RS::PipelineSource pipeline_source = pipeline_key.ubershader ? RS::PIPELINE_SOURCE_DRAW : RS::PIPELINE_SOURCE_SPECIALIZATION;
+				SceneShaderForwardMobile::pipeline_profile_context = { surf->owner->data->base.get_id(), surf->material ? surf->material->get_self().get_id() : 0, (uint32_t)surf->surface_index, (int)pipeline_source };
 				pipeline_rd = shader->pipeline_hash_map.get_pipeline(pipeline_key, pipeline_hash, !async_pipelines && pipeline_key.ubershader == (ubershader_iterations - 1), pipeline_source);
+				SceneShaderForwardMobile::pipeline_profile_context = {};
 
 				if (pipeline_rd.is_valid()) {
 					pipeline_valid = true;
@@ -2512,6 +2525,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 		}
 
 		if (!pipeline_valid && async_pipelines) {
+			skipped_draws++;
 			should_request_redraw = true;
 			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
 		}
@@ -2596,6 +2610,10 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 				RD::get_singleton()->draw_list_draw(draw_list, index_array_rd.is_valid(), instance_count);
 			}
 		}
+	}
+
+	if (skipped_draws > 0) {
+		GodotProfileZoneStr("RenderForwardMobile::skipped_draws", vformat("count=%d pass=%d", skipped_draws, (int)p_params->pass_mode));
 	}
 
 	// Make the actual redraw request
@@ -3370,10 +3388,13 @@ void RenderForwardMobile::_mesh_generate_all_pipelines_for_surface_cache(Geometr
 	surface.uses_transparent = uses_alpha_pass;
 	surface.uses_depth = (p_surface_cache->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE | GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW)) != 0;
 	surface.can_use_lightmap = p_surface_cache->owner->lightmap_instance.is_valid() || p_surface_cache->owner->lightmap_sh;
+	SceneShaderForwardMobile::pipeline_profile_context = { p_surface_cache->owner->data->base.get_id(), p_surface_cache->material ? p_surface_cache->material->get_self().get_id() : 0, (uint32_t)p_surface_cache->surface_index, (int)RS::PIPELINE_SOURCE_SURFACE };
 	_mesh_compile_pipelines_for_surface(surface, p_global, RS::PIPELINE_SOURCE_SURFACE);
+	SceneShaderForwardMobile::pipeline_profile_context = {};
 }
 
 void RenderForwardMobile::_update_dirty_geometry_instances() {
+	GodotProfileZone("RenderForwardMobile::_update_dirty_geometry_instances");
 	while (geometry_instance_dirty_list.first()) {
 		_geometry_instance_update(geometry_instance_dirty_list.first()->self());
 	}

@@ -31,6 +31,7 @@
 #include "mesh.h"
 
 #include "core/math/convex_hull.h"
+#include "core/profiling/profiling.h"
 #include "core/templates/pair.h"
 #include "scene/resources/surface_tool.h"
 
@@ -1583,6 +1584,7 @@ void ArrayMesh::_create_if_empty() const {
 }
 
 void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
+	GodotProfileZoneStr("ArrayMesh::_set_surfaces", vformat("%s rid=%d", get_path(), mesh.is_valid() ? mesh.get_id() : 0));
 	Vector<RS::SurfaceData> surface_data;
 	Vector<Ref<Material>> surface_materials;
 	Vector<String> surface_names;
@@ -1689,6 +1691,9 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 		RS::get_singleton()->mesh_set_blend_shape_mode(mesh, (RS::BlendShapeMode)blend_shape_mode);
 		RS::get_singleton()->mesh_set_path(mesh, get_path());
 	}
+	{
+		GodotProfileZoneStr("ArrayMesh::rid", vformat("%s rid=%d", get_path(), mesh.get_id()));
+	}
 
 	surfaces.clear();
 	clear_cache();
@@ -1779,8 +1784,12 @@ void ArrayMesh::_recompute_aabb() {
 
 // TODO: Need to add binding to add_surface using future MeshSurfaceData object.
 void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RS::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale) {
+	GodotProfileZoneStr("ArrayMesh::add_surface", vformat("%s rid=%d", get_path(), mesh.is_valid() ? mesh.get_id() : 0));
 	ERR_FAIL_COND(surfaces.size() == RS::MAX_MESH_SURFACES);
 	_create_if_empty();
+	{
+		GodotProfileZoneStr("ArrayMesh::rid", vformat("%s rid=%d", get_path(), mesh.get_id()));
+	}
 
 	Surface s;
 	s.aabb = p_aabb;

@@ -41,6 +41,17 @@
 namespace RendererSceneRenderImplementation {
 
 class SceneShaderForwardMobile {
+public:
+	// Set by the draw loop and mesh pipeline generation so a pipeline compile can be
+	// attributed to the mesh / material that asked for it (profiler zones only).
+	struct PipelineProfileContext {
+		uint64_t mesh_rid = 0;
+		uint64_t material_rid = 0;
+		uint32_t surface_index = 0;
+		int source = -1;
+	};
+	static thread_local PipelineProfileContext pipeline_profile_context;
+
 private:
 	static SceneShaderForwardMobile *singleton;
 	static Mutex singleton_mutex;
@@ -350,6 +361,9 @@ public:
 			uint32_t hash = 0;
 			RID version;
 			ShaderData::PipelineCreateParams params;
+			PipelineProfileContext profile_context;
+			String shader_name;
+
 		};
 
 		Mutex mutex;
@@ -389,6 +403,7 @@ public:
 	BinaryMutex shader_start_mutex;
 	uint64_t shader_start_frame = UINT64_MAX;
 	uint32_t shader_starts_in_frame = 0;
+	uint64_t deferred_shader_starts = 0;
 	void set_async_shader_variants(bool p_enabled, uint32_t p_max_new_versions_per_frame);
 	bool _is_nowait_thread() const;
 	bool _shader_start_allowed();

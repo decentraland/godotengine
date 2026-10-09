@@ -33,6 +33,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/worker_thread_pool.h"
+#include "core/profiling/profiling.h"
 #include "core/version.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/shader_include_db.h"
@@ -296,6 +297,7 @@ Vector<String> ShaderRD::_build_variant_stage_sources(uint32_t p_variant, Compil
 }
 
 void ShaderRD::_compile_variant(uint32_t p_variant, CompileData p_data) {
+	GodotProfileZoneStr("ShaderRD::_compile_variant", name);
 	uint32_t variant = group_to_variant_map[p_data.group][p_variant];
 	if (!variants_enabled[variant]) {
 		return; // Variant is disabled, return.

@@ -32,6 +32,7 @@
 
 #include "../effects/copy_effects.h"
 #include "../framebuffer_cache_rd.h"
+#include "core/profiling/profiling.h"
 #include "material_storage.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 
@@ -848,6 +849,7 @@ void TextureStorage::texture_free(RID p_texture) {
 }
 
 void TextureStorage::texture_2d_initialize(RID p_texture, const Ref<Image> &p_image) {
+	GodotProfileZone("TextureStorage::texture_2d_initialize");
 	ERR_FAIL_COND(p_image.is_null());
 
 	TextureToRDFormat ret_format;
@@ -1414,6 +1416,7 @@ RID TextureStorage::texture_create_from_native_handle(RS::TextureType p_type, Im
 }
 
 void TextureStorage::_texture_2d_update(RID p_texture, const Ref<Image> &p_image, int p_layer, bool p_immediate) {
+	GodotProfileZone("TextureStorage::_texture_2d_update");
 	ERR_FAIL_COND(p_image.is_null() || p_image->is_empty());
 
 	Texture *tex = texture_owner.get_or_null(p_texture);
@@ -1705,6 +1708,7 @@ void TextureStorage::texture_3d_placeholder_initialize(RID p_texture) {
 }
 
 Ref<Image> TextureStorage::texture_2d_get(RID p_texture) const {
+	GodotProfileZone("TextureStorage::texture_2d_get");
 	Texture *tex = texture_owner.get_or_null(p_texture);
 	ERR_FAIL_NULL_V(tex, Ref<Image>());
 

@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/math/math_funcs.h"
 #include "core/os/main_loop.h"
+#include "core/profiling/profiling.h"
 #include "scene/resources/theme.h"
 #include "scene/theme/theme_db.h"
 #include "servers/rendering/rendering_server.h"
@@ -44,6 +45,7 @@
   PrimitiveMesh
 */
 void PrimitiveMesh::_update() const {
+	GodotProfileZoneStr("PrimitiveMesh::_update", vformat("%s %s rid=%d", get_class(), get_path(), mesh.get_id()));
 	Array arr;
 	if (GDVIRTUAL_CALL(_create_mesh_array, arr)) {
 		ERR_FAIL_COND_MSG(arr.size() != RS::ARRAY_MAX, "_create_mesh_array must return an array of Mesh.ARRAY_MAX elements.");

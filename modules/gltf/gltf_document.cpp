@@ -45,6 +45,7 @@
 #include "core/io/json.h"
 #include "core/io/stream_peer.h"
 #include "core/object/object_id.h"
+#include "core/profiling/profiling.h"
 #include "core/version.h"
 #include "scene/2d/node_2d.h"
 #include "scene/3d/bone_attachment_3d.h"
@@ -7063,6 +7064,7 @@ Error GLTFDocument::write_to_filesystem(Ref<GLTFState> p_state, const String &p_
 
 Node *GLTFDocument::generate_scene(Ref<GLTFState> p_state, float p_bake_fps, bool p_trimming, bool p_remove_immutable_tracks) {
 	ERR_FAIL_COND_V(p_state.is_null(), nullptr);
+	GodotProfileZoneStr("GLTFDocument::generate_scene", p_state->get_filename());
 	// The glTF file must have nodes, and have some marked as root nodes, in order to generate a scene.
 	if (p_state->nodes.is_empty()) {
 		WARN_PRINT("glTF: This glTF file has no nodes, the generated Godot scene will be empty.");
@@ -7155,6 +7157,7 @@ Error GLTFDocument::append_from_scene(Node *p_node, Ref<GLTFState> p_state, uint
 }
 
 Error GLTFDocument::append_from_buffer(const PackedByteArray &p_bytes, const String &p_base_path, Ref<GLTFState> p_state, uint32_t p_flags) {
+	GodotProfileZone("GLTFDocument::append_from_buffer");
 	Ref<GLTFState> state = p_state;
 	ERR_FAIL_COND_V(state.is_null(), FAILED);
 	// TODO Add missing texture and missing .bin file paths to r_missing_deps 2021-09-10 fire
@@ -7179,6 +7182,7 @@ Error GLTFDocument::append_from_buffer(const PackedByteArray &p_bytes, const Str
 }
 
 Error GLTFDocument::append_from_file(const String &p_path, Ref<GLTFState> p_state, uint32_t p_flags, const String &p_base_path) {
+	GodotProfileZoneStr("GLTFDocument::append_from_file", p_path);
 	Ref<GLTFState> state = p_state;
 	// TODO Add missing texture and missing .bin file paths to r_missing_deps 2021-09-10 fire
 	if (state == Ref<GLTFState>()) {

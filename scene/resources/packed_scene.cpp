@@ -35,6 +35,7 @@
 #include "core/io/missing_resource.h"
 #include "core/io/resource_loader.h"
 #include "core/object/script_language.h"
+#include "core/profiling/profiling.h"
 #include "core/templates/local_vector.h"
 #include "core/variant/callable_bind.h"
 #include "scene/2d/node_2d.h"
@@ -151,6 +152,7 @@ static Node *_find_node_by_id(Node *p_owner, Node *p_node, int32_t p_id) {
 }
 
 Node *SceneState::instantiate(GenEditState p_edit_state) const {
+	GodotProfileZoneStr("SceneState::instantiate", path);
 	// Nodes where instantiation failed (because something is missing.)
 	List<Node *> stray_instances;
 

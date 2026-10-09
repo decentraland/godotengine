@@ -9038,6 +9038,52 @@
                 "Registers callbacks to be called at different phases of the main loop."
             ],
             "since": "4.5"
+        },
+        {
+            "name": "profiler_zone_begin",
+            "arguments": [
+                {
+                    "name": "p_name",
+                    "type": "const char*",
+                    "description": [
+                        "The zone name (UTF-8, NUL-terminated)."
+                    ]
+                },
+                {
+                    "name": "p_text",
+                    "type": "const char*",
+                    "description": [
+                        "Optional text attached to the zone (asset path, id...), or NULL."
+                    ]
+                }
+            ],
+            "description": [
+                "Opens a profiler zone on the calling thread. Zones must be closed with profiler_zone_end() in strict nesting order on the same thread.",
+                "Does nothing when the engine was built without a profiler backend (see profiler_is_enabled())."
+            ],
+            "since": "4.6"
+        },
+        {
+            "name": "profiler_zone_end",
+            "arguments": [],
+            "description": [
+                "Closes the innermost zone opened with profiler_zone_begin() on the calling thread."
+            ],
+            "since": "4.6"
+        },
+        {
+            "name": "profiler_is_enabled",
+            "return_value": {
+                "type": "GDExtensionBool",
+                "description": [
+                    "Whether a profiler backend (Tracy, Perfetto, Instruments) is compiled into this engine build."
+                ]
+            },
+            "arguments": [],
+            "description": [
+                "Reports whether profiler zones are recorded by this engine build."
+            ],
+            "since": "4.6"
         }
     ]
 }

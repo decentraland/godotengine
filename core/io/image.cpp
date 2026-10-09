@@ -35,6 +35,7 @@
 #include "core/io/image_loader.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
+#include "core/profiling/profiling.h"
 #include "core/templates/hash_map.h"
 #include "core/variant/dictionary.h"
 
@@ -2144,6 +2145,7 @@ void Image::normalize() {
 }
 
 Error Image::generate_mipmaps(bool p_renormalize) {
+	GodotProfileZone("Image::generate_mipmaps");
 	ERR_FAIL_COND_V_MSG(is_compressed(), ERR_UNAVAILABLE, "Cannot generate mipmaps from compressed image formats.");
 	ERR_FAIL_COND_V_MSG(width == 0 || height == 0, ERR_UNCONFIGURED, "Cannot generate mipmaps with width or height equal to 0.");
 
@@ -2900,6 +2902,7 @@ bool Image::is_format_compressed(Format p_format) {
 }
 
 Error Image::decompress() {
+	GodotProfileZone("Image::decompress");
 	if (((format >= FORMAT_DXT1 && format <= FORMAT_RGTC_RG) || (format == FORMAT_DXT5_RA_AS_RG)) && _image_decompress_bc) {
 		_image_decompress_bc(this);
 	} else if (format >= FORMAT_BPTC_RGBA && format <= FORMAT_BPTC_RGBFU && _image_decompress_bptc) {
@@ -2936,6 +2939,7 @@ Error Image::compress(CompressMode p_mode, CompressSource p_source, ASTCFormat p
 }
 
 Error Image::compress_from_channels(CompressMode p_mode, UsedChannels p_channels, ASTCFormat p_astc_format) {
+	GodotProfileZone("Image::compress_from_channels");
 	ERR_FAIL_COND_V(data.is_empty(), ERR_INVALID_DATA);
 
 	// RenderingDevice only.
@@ -4531,6 +4535,7 @@ void Image::convert_rgba8_to_bgra8() {
 }
 
 Error Image::_load_from_buffer(const Vector<uint8_t> &p_array, ImageMemLoadFunc p_loader) {
+	GodotProfileZone("Image::_load_from_buffer");
 	int buffer_size = p_array.size();
 
 	ERR_FAIL_COND_V(buffer_size == 0, ERR_INVALID_PARAMETER);

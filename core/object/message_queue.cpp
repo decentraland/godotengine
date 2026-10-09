@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "core/profiling/profiling.h"
 
 #include <cstdio>
 
@@ -224,6 +225,7 @@ void CallQueue::_call_function(const Callable &p_callable, const Variant *p_args
 }
 
 Error CallQueue::flush() {
+	GodotProfileZone("MessageQueue::flush");
 	LOCK_MUTEX;
 
 	if (pages.is_empty()) {
@@ -263,17 +265,20 @@ Error CallQueue::flush() {
 
 		switch (message->type & FLAG_MASK) {
 			case TYPE_CALL: {
+				GodotProfileZoneName(message->callable.get_method());
 				if (target || (message->type & FLAG_NULL_IS_OK)) {
 					Variant *args = (Variant *)(message + 1);
 					_call_function(message->callable, args, message->args, message->type & FLAG_SHOW_ERROR);
 				}
 			} break;
 			case TYPE_NOTIFICATION: {
+				GodotProfileZone("deferred notification");
 				if (target) {
 					target->notification(message->notification);
 				}
 			} break;
 			case TYPE_SET: {
+				GodotProfileZoneName(message->callable.get_method());
 				if (target) {
 					Variant *arg = (Variant *)(message + 1);
 					target->set(message->callable.get_method(), *arg);

@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "mesh_storage.h"
+#include "core/profiling/profiling.h"
 
 using namespace RendererRD;
 
@@ -257,6 +258,7 @@ void MeshStorage::mesh_set_blend_shape_count(RID p_mesh, int p_blend_shape_count
 
 /// Returns stride
 void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface) {
+	GodotProfileZone("MeshStorage::mesh_add_surface");
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL(mesh);
 
@@ -635,6 +637,7 @@ RID MeshStorage::mesh_surface_get_material(RID p_mesh, int p_surface) const {
 }
 
 RS::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int p_surface) const {
+	GodotProfileZone("MeshStorage::mesh_get_surface");
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_NULL_V(mesh, RS::SurfaceData());
 	ERR_FAIL_UNSIGNED_INDEX_V((uint32_t)p_surface, mesh->surface_count, RS::SurfaceData());
