@@ -191,6 +191,7 @@ void SceneTree::remove_from_group(const StringName &p_group, Node *p_node) {
 }
 
 void SceneTree::flush_transform_notifications() {
+	GodotProfileZone("SceneTree::flush_transform_notifications");
 	_THREAD_SAFE_METHOD_
 
 	SelfList<Node> *n = xform_change_list.first();
@@ -311,6 +312,7 @@ void SceneTree::_flush_accessibility_changes() {
 }
 
 void SceneTree::_flush_ugc() {
+	GodotProfileZone("SceneTree::_flush_ugc");
 	ugc_locked = true;
 
 	while (unique_group_calls.size()) {
@@ -780,6 +782,7 @@ bool SceneTree::process(double p_time) {
 }
 
 void SceneTree::process_timers(double p_delta, bool p_physics_frame) {
+	GodotProfileZone("SceneTree::process_timers");
 	_THREAD_SAFE_METHOD_
 	const List<Ref<SceneTreeTimer>>::Element *L = timers.back(); // Last element.
 	const double unscaled_delta = Engine::get_singleton()->get_process_step();
@@ -812,6 +815,7 @@ void SceneTree::process_timers(double p_delta, bool p_physics_frame) {
 }
 
 void SceneTree::process_tweens(double p_delta, bool p_physics) {
+	GodotProfileZone("SceneTree::process_tweens");
 	_THREAD_SAFE_METHOD_
 	// This methods works similarly to how SceneTreeTimers are handled.
 	const List<Ref<Tween>>::Element *L = tweens.back();
@@ -1189,6 +1193,7 @@ void SceneTree::_process_group(ProcessGroup *p_group, bool p_physics) {
 			continue;
 		}
 
+		GodotProfileZoneName(n->get_class_name());
 		if (p_physics) {
 			if (n->is_physics_processing_internal()) {
 				n->notification(Node::NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
@@ -1216,6 +1221,7 @@ void SceneTree::_process_groups_thread(uint32_t p_index, bool p_physics) {
 }
 
 void SceneTree::_process(bool p_physics) {
+	GodotProfileZone("SceneTree::_process");
 	if (process_groups_dirty) {
 		{
 			// First, remove dirty groups.
@@ -1598,6 +1604,7 @@ Vector<Node *> SceneTree::get_nodes_in_group(const StringName &p_group) {
 }
 
 void SceneTree::_flush_delete_queue() {
+	GodotProfileZone("SceneTree::_flush_delete_queue");
 	_THREAD_SAFE_METHOD_
 
 	while (delete_queue.size()) {

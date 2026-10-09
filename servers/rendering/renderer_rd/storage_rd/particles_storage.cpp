@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "particles_storage.h"
+#include "core/profiling/profiling.h"
 
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/rendering_server_globals.h"
@@ -638,6 +639,7 @@ void ParticlesStorage::particles_request_process(RID p_particles) {
 }
 
 AABB ParticlesStorage::particles_get_current_aabb(RID p_particles) {
+	GodotProfileZone("ParticlesStorage::particles_get_current_aabb");
 	const Particles *particles = particles_owner.get_or_null(p_particles);
 	ERR_FAIL_NULL_V(particles, AABB());
 

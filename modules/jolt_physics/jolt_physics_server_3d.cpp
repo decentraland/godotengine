@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "jolt_physics_server_3d.h"
+#include "core/profiling/profiling.h"
 
 #include "joints/jolt_cone_twist_joint_3d.h"
 #include "joints/jolt_generic_6dof_joint_3d.h"
@@ -1615,6 +1616,7 @@ void JoltPhysicsServer3D::finish() {
 }
 
 void JoltPhysicsServer3D::step(real_t p_step) {
+	GodotProfileZone("JoltPhysicsServer3D::step");
 	if (!active) {
 		return;
 	}
@@ -1629,6 +1631,7 @@ void JoltPhysicsServer3D::step(real_t p_step) {
 }
 
 void JoltPhysicsServer3D::sync() {
+	GodotProfileZone("JoltPhysicsServer3D::sync");
 	doing_sync = true;
 }
 
@@ -1637,6 +1640,7 @@ void JoltPhysicsServer3D::end_sync() {
 }
 
 void JoltPhysicsServer3D::flush_queries() {
+	GodotProfileZone("JoltPhysicsServer3D::flush_queries");
 	if (!active) {
 		return;
 	}

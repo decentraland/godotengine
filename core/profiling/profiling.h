@@ -46,6 +46,7 @@
 // Use the tracy profiler.
 
 #include "core/string/string_name.h"
+#include "core/string/ustring.h"
 
 #define TRACY_ENABLE
 
@@ -58,6 +59,7 @@ const SourceLocationData *intern_source_location(const void *p_function_ptr, con
 
 // Define tracing macros.
 #define GodotProfileFrameMark FrameMark
+#define GodotProfileCounter(m_name, m_value) TracyPlot(m_name, (int64_t)(m_value))
 #define GodotProfileZone(m_zone_name) ZoneNamedN(GD_UNIQUE_NAME(__godot_tracy_szone_), m_zone_name, true)
 #define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name) ZoneNamedN(__godot_tracy_zone_##m_group_name, m_zone_name, true)
 #define GodotProfileZoneGroupedEndEarly(m_group_name, m_zone_name) __godot_tracy_zone_##m_group_name.~ScopedZone();
@@ -72,6 +74,16 @@ const SourceLocationData *intern_source_location(const void *p_function_ptr, con
 	static constexpr tracy::SourceLocationData TracyConcat(__tracy_source_location, TracyLine){ m_zone_name, TracyFunction, TracyFile, (uint32_t)TracyLine, 0 }; \
 	new (&__godot_tracy_zone_##m_group_name) tracy::ScopedZone(&TracyConcat(__tracy_source_location, TracyLine), TRACY_CALLSTACK, true)
 #endif
+
+// Zone named after a StringName (e.g. a class name); one per scope.
+#define GodotProfileZoneName(m_string_name) GodotProfileZoneStr("Node::process", String(m_string_name))
+// One per scope: the zone variable name is fixed so the text can be attached to it.
+#define GodotProfileZoneStr(m_zone_name, m_godot_string)                                                       \
+	ZoneNamedN(__godot_tracy_zone_str, m_zone_name, true);                                                        \
+	{                                                                                                             \
+		CharString __godot_zone_text = (m_godot_string).utf8();                                                   \
+		ZoneTextV(__godot_tracy_zone_str, __godot_zone_text.get_data(), (size_t)__godot_zone_text.length());    \
+	}
 
 #define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line) \
 	tracy::ScopedZone __godot_tracy_script(tracy::intern_source_location(m_ptr, m_file, m_function, m_name, m_line, true))
@@ -98,6 +110,7 @@ void godot_cleanup_profiler();
 
 #include <perfetto.h>
 
+#include "core/string/ustring.h"
 #include "core/typedefs.h"
 
 PERFETTO_DEFINE_CATEGORIES(
@@ -115,8 +128,17 @@ struct PerfettoGroupedEventEnder {
 	}
 };
 
-#define GodotProfileFrameMark // TODO
+#define GodotProfileFrameMark TRACE_EVENT_INSTANT("godot", "FrameMark");
+#define GodotProfileCounter(m_name, m_value) TRACE_COUNTER("godot", m_name, (int64_t)(m_value));
 #define GodotProfileZone(m_zone_name) TRACE_EVENT("godot", m_zone_name);
+// One per scope. The text lands as the "text" debug annotation of the slice and is only
+// built while a tracing session is recording.
+#define GodotProfileZoneStr(m_zone_name, m_godot_string)           \
+	CharString __godot_zone_text;                                  \
+	if (TRACE_EVENT_CATEGORY_ENABLED("godot")) {                   \
+		__godot_zone_text = (m_godot_string).utf8();               \
+	}                                                              \
+	TRACE_EVENT("godot", m_zone_name, "text", __godot_zone_text.get_data());
 #define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name) \
 	TRACE_EVENT_BEGIN("godot", m_zone_name);                    \
 	PerfettoGroupedEventEnder __godot_perfetto_zone_##m_group_name
@@ -125,7 +147,32 @@ struct PerfettoGroupedEventEnder {
 	__godot_perfetto_zone_##m_group_name._end_now();       \
 	TRACE_EVENT_BEGIN("godot", m_zone_name);
 
-#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
+#include "core/string/string_name.h"
+
+namespace godot_profiling {
+// One zone per script function call, only for the outermost calls of each thread
+// (SCRIPT_ZONE_MAX_DEPTH) so a capture stays cheap. Names are interned per function.
+class ScriptZone {
+	bool active = false;
+
+public:
+	ScriptZone(const void *p_function, const StringName &p_file, const StringName &p_name);
+	~ScriptZone();
+};
+
+class NameZone {
+	bool active = false;
+
+public:
+	explicit NameZone(const StringName &p_name);
+	~NameZone();
+};
+} // namespace godot_profiling
+
+#define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line) \
+	godot_profiling::ScriptZone __godot_perfetto_script_zone(m_ptr, m_file, m_name)
+// Zone named after a StringName (class names...): the name is interned, no per-call allocation.
+#define GodotProfileZoneName(m_string_name) godot_profiling::NameZone __godot_perfetto_name_zone(m_string_name)
 #define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
 #define GodotProfileAlloc(m_ptr, m_size)
@@ -138,6 +185,8 @@ void godot_cleanup_profiler();
 
 #include <os/log.h>
 #include <os/signpost.h>
+
+#include "core/string/ustring.h"
 
 namespace apple::instruments {
 
@@ -160,6 +209,7 @@ private:
 
 } // namespace apple::instruments
 
+#define GodotProfileCounter(m_name, m_value)
 #define GodotProfileFrameMark \
 	os_signpost_event_emit(apple::instruments::LOG, OS_SIGNPOST_ID_EXCLUSIVE, "Frame");
 
@@ -184,6 +234,16 @@ private:
 #define GodotProfileZone(m_zone_name) \
 	GodotProfileZoneGroupedFirst(__COUNTER__, m_zone_name)
 
+#define GodotProfileZoneName(m_string_name) GodotProfileZoneStr("Node::process", String(m_string_name))
+// One per scope. The text is the signpost message.
+#define GodotProfileZoneStr(m_zone_name, m_godot_string)                                                                                             \
+	CharString __godot_zone_text = (m_godot_string).utf8();                                                                                          \
+	os_signpost_interval_begin(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name, "%{public}s", __godot_zone_text.get_data()); \
+	apple::instruments::DeferFunc __godot_zone_str_defer_fn = []() {                                                                                 \
+		os_signpost_interval_end(apple::instruments::LOG_TRACING, OS_SIGNPOST_ID_EXCLUSIVE, m_zone_name);                                            \
+	};                                                                                                                                               \
+	apple::instruments::Defer __godot_zone_str_defer(__godot_zone_str_defer_fn);
+
 #define GodotProfileZoneScript(m_ptr, m_file, m_function, m_name, m_line)
 #define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
@@ -201,9 +261,15 @@ void godot_init_profiler();
 void godot_cleanup_profiler();
 
 // Tell the profiling backend that a new frame has started.
+#define GodotProfileCounter(m_name, m_value)
 #define GodotProfileFrameMark
 // Defines a profile zone from here to the end of the scope.
 #define GodotProfileZone(m_zone_name)
+// Same as GodotProfileZone, with a Godot String (asset path, task description...) attached as text.
+// At most one per scope.
+#define GodotProfileZoneStr(m_zone_name, m_godot_string)
+// Zone named after a StringName (class names...).
+#define GodotProfileZoneName(m_string_name)
 // Defines a profile zone group. The first profile zone starts immediately,
 // and ends either when the next zone starts, or when the scope ends.
 #define GodotProfileZoneGroupedFirst(m_group_name, m_zone_name)
@@ -226,3 +292,10 @@ void godot_cleanup_profiler();
 #define GodotProfileZoneScriptSystemCall(m_ptr, m_file, m_function, m_name, m_line)
 
 #endif
+
+// Dynamic zones for code the macros cannot reach (GDExtensions, scripts), exposed through the
+// GDExtension interface as profiler_zone_begin/profiler_zone_end/profiler_is_enabled.
+// Begin/end pairs must nest strictly on each thread. No-ops when no backend is compiled in.
+void godot_profiler_zone_begin(const char *p_name, const char *p_text);
+void godot_profiler_zone_end();
+bool godot_profiler_is_enabled();

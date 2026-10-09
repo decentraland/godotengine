@@ -40,6 +40,7 @@
 #include "core/object/script_language_extension.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/memory.h"
+#include "core/profiling/profiling.h"
 #include "core/variant/variant.h"
 #include "core/version.h"
 
@@ -288,6 +289,18 @@ static void gdextension_mem_free2(void *p_mem, GDExtensionBool p_prepad_align) {
 }
 
 // Helper print functions.
+static void gdextension_profiler_zone_begin(const char *p_name, const char *p_text) {
+	godot_profiler_zone_begin(p_name, p_text);
+}
+
+static void gdextension_profiler_zone_end() {
+	godot_profiler_zone_end();
+}
+
+static GDExtensionBool gdextension_profiler_is_enabled() {
+	return godot_profiler_is_enabled();
+}
+
 static void gdextension_print_error(const char *p_description, const char *p_function, const char *p_file, int32_t p_line, GDExtensionBool p_editor_notify) {
 	_err_print_error(p_function, p_file, p_line, p_description, p_editor_notify, ERR_HANDLER_ERROR);
 }
@@ -1707,6 +1720,9 @@ void gdextension_setup_interface() {
 	REGISTER_INTERFACE_FUNC(mem_alloc2);
 	REGISTER_INTERFACE_FUNC(mem_realloc2);
 	REGISTER_INTERFACE_FUNC(mem_free2);
+	REGISTER_INTERFACE_FUNC(profiler_zone_begin);
+	REGISTER_INTERFACE_FUNC(profiler_zone_end);
+	REGISTER_INTERFACE_FUNC(profiler_is_enabled);
 	REGISTER_INTERFACE_FUNC(print_error);
 	REGISTER_INTERFACE_FUNC(print_error_with_message);
 	REGISTER_INTERFACE_FUNC(print_warning);
