@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#import "godot_host.h"
 #import "godot_view_controller.h"
 
 #import "display_server_apple_embedded.h"
@@ -203,6 +204,9 @@
 
 - (void)displayLoadingOverlay {
 #if !defined(VISIONOS_ENABLED)
+	if (godot_host_is_hosted()) {
+		return;
+	}
 	NSBundle *bundle = [NSBundle mainBundle];
 	NSString *storyboardName = @"Launch Screen";
 
@@ -244,6 +248,9 @@
 // Propagate UI preferences to the root VC (the SwiftUI hosting controller doesn't delegate these).
 #ifdef IOS_ENABLED
 - (void)propagateUIPreferencesToRootViewController {
+	if (godot_host_is_hosted()) {
+		return;
+	}
 	UIViewController *rootVC = self.view.window.rootViewController;
 	if (!rootVC || rootVC == self) {
 		return;
