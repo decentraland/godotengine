@@ -1578,6 +1578,10 @@ bool RendererSceneCull::instance_geometry_is_draw_ready(RID p_instance) const {
 	return geometry_instance == nullptr || geometry_instance->is_draw_ready();
 }
 
+void RendererSceneCull::enable_async_shader_compilation(int p_shader_compile_threads) {
+	scene_render->enable_async_shader_compilation(p_shader_compile_threads);
+}
+
 Variant RendererSceneCull::instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &p_parameter) const {
 	const Instance *instance = instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL_V(instance, Variant());

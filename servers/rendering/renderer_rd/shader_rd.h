@@ -39,6 +39,8 @@
 #include "core/templates/self_list.h"
 #include "servers/rendering/rendering_server.h"
 
+#include <atomic>
+
 class ShaderRD {
 public:
 	struct VariantDefine {
@@ -77,8 +79,13 @@ private:
 		HashMap<StringName, CharString> code_sections;
 		Vector<CharString> custom_defines;
 		Vector<WorkerThreadPool::GroupID> group_compilation_tasks;
+		// Pool each group task was added to: the compile pool can change while tasks are in flight.
+		Vector<WorkerThreadPool *> group_compilation_pools;
 		// Groups whose compile one thread waits for with the version mutex released (bit per group).
 		uint32_t group_waiting = 0;
+		// Threads sleeping on compile_wait_cv for this version; version_free waits for them to leave.
+		uint32_t compile_sleepers = 0;
+		bool freeing = false;
 
 		Vector<Vector<uint8_t>> variant_data;
 		Vector<RID> variants;
@@ -100,8 +107,16 @@ private:
 	void _initialize_version(Version *p_version);
 	void _clear_version(Version *p_version);
 	void _compile_version_start(Version *p_version, int p_group);
-	WorkerThreadPool *compile_pool = nullptr;
-	WorkerThreadPool *_compile_pool() const { return compile_pool ? compile_pool : WorkerThreadPool::get_singleton(); }
+	std::atomic<WorkerThreadPool *> compile_pool = nullptr;
+	WorkerThreadPool *_compile_pool() const {
+		WorkerThreadPool *pool = compile_pool.load(std::memory_order_acquire);
+		return pool ? pool : WorkerThreadPool::get_singleton();
+	}
+	_FORCE_INLINE_ WorkerThreadPool *_group_pool(const Version *p_version, int p_group) const {
+		WorkerThreadPool *pool = p_version->group_compilation_pools[p_group];
+		return pool ? pool : WorkerThreadPool::get_singleton();
+	}
+	void _compile_wait_notify();
 	void _compile_version_end(Version *p_version, int p_group);
 	void _compile_version_finish(Version *p_version, int p_group);
 	bool _compile_wait_unlocked(Version *p_version, int p_group, WorkerThreadPool::GroupID p_task);
@@ -134,7 +149,7 @@ private:
 	bool is_compute = false;
 
 	// When set, a SPIR-V group wait releases the version mutex so pollers and other versions' users never block on it.
-	bool unlocked_compile_wait = false;
+	std::atomic<bool> unlocked_compile_wait = false;
 	BinaryMutex compile_wait_mutex;
 	ConditionVariable compile_wait_cv;
 	uint64_t compile_wait_generation = 0;
@@ -246,9 +261,11 @@ public:
 	};
 	// Never blocks. Finishes groups whose tasks are done; starts a dirty version only when p_allow_start.
 	VersionPoll version_poll(RID p_version, bool p_allow_start, bool *r_started, Mutex *p_unlock_after_version_lock = nullptr);
-	void set_unlocked_compile_wait(bool p_enabled) { unlocked_compile_wait = p_enabled; }
-	// Must be set before any version starts compiling; null uses the shared pool.
-	void set_compile_pool(WorkerThreadPool *p_pool) { compile_pool = p_pool; }
+	void set_unlocked_compile_wait(bool p_enabled) { unlocked_compile_wait.store(p_enabled, std::memory_order_release); }
+	// Applies to groups started afterwards; groups in flight keep the pool they were added to. Null uses the shared pool.
+	void set_compile_pool(WorkerThreadPool *p_pool) { compile_pool.store(p_pool, std::memory_order_release); }
+	// Never blocks: true while a SPIR-V group of the version is in flight (or its mutex is busy).
+	bool version_is_compiling(RID p_version);
 
 	bool version_free(RID p_version);
 

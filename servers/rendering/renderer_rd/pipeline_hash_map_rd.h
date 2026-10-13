@@ -53,8 +53,6 @@ private:
 	LocalVector<Pair<uint32_t, RID>> compiled_queue;
 	Mutex compiled_queue_mutex;
 	RBSet<uint32_t> compilation_set;
-	// Submitted but not published yet: compiling inline on some thread or queued on the async compiler.
-	RBSet<uint32_t> compiling_set;
 	HashMap<uint32_t, WorkerThreadPool::TaskID> compilation_tasks;
 	Mutex local_mutex;
 
@@ -67,7 +65,7 @@ private:
 		{
 			MutexLock lock(compiled_queue_mutex);
 			for (const Pair<uint32_t, RID> &pair : compiled_queue) {
-				// The same key can be compiled twice (a waiting caller compiles a key another thread is on); first valid one wins.
+				// Keep the first valid pipeline of a key: a late duplicate or a failed (null) result must not replace it.
 				typename RBMap<uint32_t, RID>::Element *existing = hash_map.find(pair.first);
 				if (existing != nullptr && existing->value().is_valid()) {
 					if (pair.second.is_valid()) {
@@ -152,7 +150,6 @@ public:
 			if (!already_submitted) {
 				// Record the pipeline as submitted, it won't be compiled again.
 				compilation_set.insert(p_key_hash);
-				compiling_set.insert(p_key_hash);
 			}
 		}
 
@@ -200,17 +197,11 @@ public:
 		}
 
 		(creation_object->*creation_function)(p_key);
-
-		MutexLock local_lock(local_mutex);
-		compiling_set.erase(p_key_hash);
 	}
 
 	// Called by the async compiler; p_pipeline may be null to record a failed compile.
 	void async_pipeline_finished(uint32_t p_hash, RID p_pipeline) {
 		add_compiled_pipeline(p_hash, p_pipeline);
-
-		MutexLock local_lock(local_mutex);
-		compiling_set.erase(p_hash);
 	}
 
 	void wait_for_pipeline(uint32_t p_key_hash) {
@@ -256,21 +247,6 @@ public:
 				_add_new_pipelines_to_map();
 
 				e = hash_map.find(p_key_hash);
-				if (e == nullptr) {
-					bool compiling_elsewhere = false;
-					{
-						MutexLock local_lock(local_mutex);
-						compiling_elsewhere = compiling_set.has(p_key_hash);
-					}
-
-					if (compiling_elsewhere && async_function != nullptr) {
-						// Another thread owns this compile; compile our own copy instead of waiting for it.
-						(creation_object->*creation_function)(p_key);
-						_add_new_pipelines_to_map();
-						e = hash_map.find(p_key_hash);
-					}
-				}
-
 				if (e != nullptr) {
 					return e->value();
 				} else {
@@ -299,7 +275,6 @@ public:
 
 		MutexLock local_lock(local_mutex);
 		compilation_set.clear();
-		compiling_set.clear();
 	}
 
 	// Set the external pipeline compilations array to increase the counters on every time a pipeline is compiled.

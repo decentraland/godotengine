@@ -200,6 +200,7 @@ void ShaderRD::_initialize_version(Version *p_version) {
 	p_version->variants.resize_initialized(variant_defines.size());
 	p_version->variant_data.resize(variant_defines.size());
 	p_version->group_compilation_tasks.resize_initialized(group_enabled.size());
+	p_version->group_compilation_pools.resize_initialized(group_enabled.size());
 }
 
 void ShaderRD::_clear_version(Version *p_version) {
@@ -552,8 +553,10 @@ void ShaderRD::_compile_version_start(Version *p_version, int p_group) {
 	compile_data.version = p_version;
 	compile_data.group = p_group;
 
-	WorkerThreadPool::GroupID group_task = _compile_pool()->add_template_group_task(this, &ShaderRD::_compile_variant, compile_data, group_to_variant_map[p_group].size(), -1, true, SNAME("ShaderCompilation"));
+	WorkerThreadPool *pool = _compile_pool();
+	WorkerThreadPool::GroupID group_task = pool->add_template_group_task(this, &ShaderRD::_compile_variant, compile_data, group_to_variant_map[p_group].size(), -1, true, SNAME("ShaderCompilation"));
 	p_version->group_compilation_tasks.write[p_group] = group_task;
+	p_version->group_compilation_pools.write[p_group] = pool;
 }
 
 void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
@@ -561,20 +564,24 @@ void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
 		return;
 	}
 	WorkerThreadPool::GroupID group_task = p_version->group_compilation_tasks[p_group];
-	if (unlocked_compile_wait) {
+	if (unlocked_compile_wait.load(std::memory_order_acquire)) {
 		if (!_compile_wait_unlocked(p_version, p_group, group_task)) {
 			return; // Another thread finished the group while this one slept.
 		}
 		_compile_version_finish(p_version, p_group);
-		{
-			MutexLock wait_lock(compile_wait_mutex);
-			compile_wait_generation++;
-		}
-		compile_wait_cv.notify_all();
+		_compile_wait_notify();
 		return;
 	}
-	_compile_pool()->wait_for_group_task_completion(group_task);
+	_group_pool(p_version, p_group)->wait_for_group_task_completion(group_task);
 	_compile_version_finish(p_version, p_group);
+}
+
+void ShaderRD::_compile_wait_notify() {
+	{
+		MutexLock wait_lock(compile_wait_mutex);
+		compile_wait_generation++;
+	}
+	compile_wait_cv.notify_all();
 }
 
 // Called with the version mutex held; returns it held. True when this thread waited and must finish the group.
@@ -585,7 +592,7 @@ bool ShaderRD::_compile_wait_unlocked(Version *p_version, int p_group, WorkerThr
 			// Only one thread may wait on a group: the pool posts its semaphore once.
 			p_version->group_waiting |= bit;
 			p_version->mutex->unlock();
-			_compile_pool()->wait_for_group_task_completion(p_task);
+			_group_pool(p_version, p_group)->wait_for_group_task_completion(p_task);
 			p_version->mutex->lock();
 			p_version->group_waiting &= ~bit;
 			return true;
@@ -594,12 +601,17 @@ bool ShaderRD::_compile_wait_unlocked(Version *p_version, int p_group, WorkerThr
 			// Lock order is version mutex -> compile_wait_mutex; the generation is read before the version unlock.
 			MutexLock wait_lock(compile_wait_mutex);
 			const uint64_t generation = compile_wait_generation;
+			p_version->compile_sleepers++;
 			p_version->mutex->unlock();
 			while (generation == compile_wait_generation) {
 				compile_wait_cv.wait(wait_lock);
 			}
 		}
 		p_version->mutex->lock();
+		p_version->compile_sleepers--;
+		if (p_version->freeing) {
+			_compile_wait_notify(); // version_free waits for the last sleeper before deleting the mutex.
+		}
 	}
 	return false;
 }
@@ -764,12 +776,12 @@ ShaderRD::VersionPoll ShaderRD::version_poll(RID p_version, bool p_allow_start, 
 
 	VersionPoll result = VERSION_POLL_READY;
 	for (int pass = 0; pass < 2 && result == VERSION_POLL_READY; pass++) {
-		WorkerThreadPool *pool = _compile_pool();
 		for (int i = 0; i < version->group_compilation_tasks.size(); i++) {
 			WorkerThreadPool::GroupID task = version->group_compilation_tasks[i];
 			if (task == 0) {
 				continue;
 			}
+			WorkerThreadPool *pool = _group_pool(version, i);
 			if ((version->group_waiting & (1u << i)) || !pool->is_group_task_completed(task)) {
 				result = VERSION_POLL_PENDING;
 				continue;
@@ -807,6 +819,27 @@ ShaderRD::VersionPoll ShaderRD::version_poll(RID p_version, bool p_allow_start, 
 	return result;
 }
 
+bool ShaderRD::version_is_compiling(RID p_version) {
+	Version *version = version_owner.get_or_null(p_version);
+	if (version == nullptr) {
+		return false;
+	}
+	if (!version->mutex->try_lock()) {
+		return true;
+	}
+
+	bool compiling = version->compile_sleepers > 0;
+	for (int i = 0; i < version->group_compilation_tasks.size() && !compiling; i++) {
+		WorkerThreadPool::GroupID task = version->group_compilation_tasks[i];
+		if (task != 0 && ((version->group_waiting & (1u << i)) || !_group_pool(version, i)->is_group_task_completed(task))) {
+			compiling = true;
+		}
+	}
+
+	version->mutex->unlock();
+	return compiling;
+}
+
 bool ShaderRD::version_free(RID p_version) {
 	if (version_owner.owns(p_version)) {
 		{
@@ -821,7 +854,20 @@ bool ShaderRD::version_free(RID p_version) {
 		}
 
 		version->mutex->lock();
+		version->freeing = true;
 		_clear_version(version);
+		// Threads sleeping in _compile_wait_unlocked() relock this mutex when they wake: let them leave before deleting it.
+		while (version->compile_sleepers > 0) {
+			{
+				MutexLock wait_lock(compile_wait_mutex);
+				const uint64_t generation = compile_wait_generation;
+				version->mutex->unlock();
+				while (generation == compile_wait_generation) {
+					compile_wait_cv.wait(wait_lock);
+				}
+			}
+			version->mutex->lock();
+		}
 		version_owner.free(p_version);
 		version->mutex->unlock();
 		memdelete(version->mutex);

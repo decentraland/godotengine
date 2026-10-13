@@ -1065,6 +1065,7 @@ public:
 	virtual void instance_geometry_get_shader_parameter_list(RID p_instance, List<PropertyInfo> *p_parameters) const;
 	virtual Variant instance_geometry_get_shader_parameter(RID p_instance, const StringName &p_parameter) const;
 	virtual bool instance_geometry_is_draw_ready(RID p_instance) const;
+	virtual void enable_async_shader_compilation(int p_shader_compile_threads);
 	virtual Variant instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &p_parameter) const;
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation);

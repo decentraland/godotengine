@@ -388,6 +388,10 @@ void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_
 	}
 }
 
+void RenderForwardMobile::enable_async_shader_compilation(int p_shader_compile_threads) {
+	scene_shader.enable_async_compilation(p_shader_compile_threads);
+}
+
 uint32_t RenderForwardMobile::get_pipeline_compilations(RS::PipelineSource p_source) {
 	return scene_shader.get_pipeline_compilations(p_source);
 }
@@ -422,6 +426,8 @@ bool RenderForwardMobile::free(RID p_rid) {
 }
 
 void RenderForwardMobile::update() {
+	// Every frame, with or without 3D: retired shader versions and orphaned async pipelines.
+	scene_shader.drain_async_pipeline_frees();
 	RendererSceneRenderRD::update();
 	_update_global_pipeline_data_requirements_from_project();
 	_update_global_pipeline_data_requirements_from_light_storage();
@@ -796,7 +802,6 @@ void RenderForwardMobile::_pre_opaque_render(RenderDataRD *p_render_data) {
 }
 
 void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
-	scene_shader.drain_async_pipeline_frees();
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
@@ -3483,7 +3488,7 @@ void RenderForwardMobile::_update_shader_quality_settings() {
 RenderForwardMobile::RenderForwardMobile() {
 	singleton = this;
 
-	disable_ubershaders = RD::get_singleton()->get_driver_workarounds().disable_ubershaders || bool(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/disable_ubershaders"));
+	disable_ubershaders = RD::get_singleton()->get_driver_workarounds().disable_ubershaders;
 	if (disable_ubershaders) {
 		print_verbose("Ubershaders: Disabled");
 	} else {
@@ -3534,17 +3539,7 @@ RenderForwardMobile::RenderForwardMobile() {
 	}
 #endif
 
-	// A dedicated pool keeps scene SPIR-V bursts from taking every worker the render cull and
-	// physics need. Set before init: the default shaders start compiling there.
-	const int shader_compile_threads = GLOBAL_GET("rendering/rendering_device/pipeline_compilation/shader_compile_threads");
-	if (shader_compile_threads > 0) {
-		scene_shader.shader.set_compile_pool(WorkerThreadPool::get_named_pool(SNAME("SceneShaderCompilation"), shader_compile_threads));
-	}
 	scene_shader.init(defines);
-	scene_shader.set_async_pipeline_compilation(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/async_executor"));
-	print_verbose(vformat("Async pipeline executor: %s", scene_shader.pipeline_compile_thread != nullptr ? "Enabled" : "Disabled"));
-	scene_shader.set_async_shader_variants(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/async_shader_variants"), uint32_t(int(GLOBAL_GET("rendering/rendering_device/pipeline_compilation/max_new_shader_versions_per_frame"))));
-	print_verbose(vformat("Async shader variants: %s (max new versions per frame: %d)", scene_shader.async_shader_variants ? "Enabled" : "Disabled", scene_shader.max_new_shader_versions_per_frame));
 
 	_update_shader_quality_settings();
 	_update_global_pipeline_data_requirements_from_project();

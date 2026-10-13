@@ -1247,6 +1247,15 @@
 				Sets the filter [param quality] for directional light shadows in 3D. See also [member ProjectSettings.rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality]. This parameter is global and cannot be set on a per-viewport basis.
 			</description>
 		</method>
+		<method name="enable_async_shader_compilation">
+			<return type="void" />
+			<param index="0" name="shader_compile_threads" type="int" default="2" />
+			<description>
+				Switches the Mobile renderer to non-blocking shader and pipeline compilation. Off by default; once enabled it stays enabled until the application exits, and later calls do nothing. Other renderers ignore it.
+				When enabled, the rendering thread never waits for a compile: pipelines it needs are compiled on a dedicated thread, a material whose shader is still compiling is skipped and retried, at most one new shader version starts compiling per frame, and shader versions are freed once their compiles finish. Newly visible surfaces can appear a few frames later; use [method instance_geometry_is_draw_ready] to hold an object back until it can be drawn whole. If [param shader_compile_threads] is greater than [code]0[/code], scene shaders compile on that many dedicated threads instead of the shared [WorkerThreadPool].
+				Call it once at startup, before loading 3D content.
+			</description>
+		</method>
 		<method name="environment_bake_panorama">
 			<return type="Image" />
 			<param index="0" name="environment" type="RID" />
@@ -1881,7 +1890,9 @@
 			<return type="bool" />
 			<param index="0" name="instance" type="RID" />
 			<description>
-				Returns [code]true[/code] when every surface of the geometry instance was drawn in the last color pass that included it, with no surface skipped because its shader or pipeline was still compiling. Returns [code]false[/code] while a surface is pending or before the first draw after its surfaces changed. Only the Mobile renderer tracks this; other renderers always return [code]true[/code].
+				Returns [code]true[/code] when every surface of the geometry instance was drawn in the last color pass that included it, with no surface skipped because its shader or pipeline was still compiling. Returns [code]false[/code] while a surface is pending or before the first draw after its surfaces changed. Only the Mobile renderer tracks this; other renderers always return [code]true[/code]. Surfaces are only skipped after [method enable_async_shader_compilation].
+				[b]Note:[/b] Readiness requires a color-pass draw, so this stays [code]false[/code] for an instance that is not drawn: hidden, outside every camera frustum, culled by layers or visibility range, or set to [constant SHADOW_CASTING_SETTING_SHADOWS_ONLY]. To hold an object back until it is ready, keep it drawn but invisible (for example with a dithering or alpha shader parameter) and use a timeout.
+				[b]Note:[/b] When rendering runs on a separate thread, each call synchronizes with the rendering thread. Avoid calling it for many instances every frame in that mode.
 			</description>
 		</method>
 		<method name="instance_geometry_set_cast_shadows_setting">

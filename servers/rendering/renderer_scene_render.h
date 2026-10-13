@@ -60,6 +60,8 @@ public:
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) = 0;
 	virtual uint32_t get_pipeline_compilations(RS::PipelineSource p_source) = 0;
+	// Only the Mobile renderer implements it; elsewhere it is a no-op.
+	virtual void enable_async_shader_compilation(int p_shader_compile_threads) {}
 
 	/* SDFGI UPDATE */
 

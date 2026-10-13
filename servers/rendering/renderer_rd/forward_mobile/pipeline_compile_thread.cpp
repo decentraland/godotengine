@@ -36,9 +36,13 @@
 using namespace RendererSceneRenderImplementation;
 
 bool SceneShaderForwardMobile::ShaderData::_enqueue_pipeline(const PipelineKey &p_pipeline_key, uint32_t p_hash, RS::PipelineSource p_source) {
-	PipelineCompileThread *compile_thread = SceneShaderForwardMobile::singleton->pipeline_compile_thread;
-	// Pool threads (resource loaders) keep compiling inline: they publish before anyone looks for the pipeline.
-	if (compile_thread == nullptr || WorkerThreadPool::get_singleton()->get_thread_index() != -1) {
+	SceneShaderForwardMobile *scene_shader = SceneShaderForwardMobile::singleton;
+	// Threads other than the render thread (resource loaders) keep compiling inline: they publish before anyone looks for the pipeline.
+	if (!scene_shader->async_compilation_enabled.is_set() || !scene_shader->_is_nowait_thread()) {
+		return false;
+	}
+	PipelineCompileThread *compile_thread = scene_shader->pipeline_compile_thread;
+	if (compile_thread == nullptr) {
 		return false;
 	}
 
@@ -74,10 +78,10 @@ void SceneShaderForwardMobile::ShaderData::_free_version() {
 
 	PipelineCompileThread *compile_thread = SceneShaderForwardMobile::singleton->pipeline_compile_thread;
 	if (compile_thread != nullptr) {
+		// Freed at the next frame once neither a pipeline compile nor its SPIR-V uses it: the frame never waits here.
 		compile_thread->unregister_owner(this);
-	}
-
-	if (compile_thread == nullptr || !compile_thread->retire_version_if_busy(version)) {
+		compile_thread->retire_version(version);
+	} else {
 		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
 		SceneShaderForwardMobile::singleton->shader.version_free(version);
 	}
@@ -157,22 +161,34 @@ void SceneShaderForwardMobile::PipelineCompileThread::unregister_owner(ShaderDat
 }
 
 bool SceneShaderForwardMobile::PipelineCompileThread::retire_version_if_busy(RID p_version) {
-	MutexLock lock(mutex);
-	if (running_version != p_version) {
-		return false;
+	{
+		MutexLock lock(mutex);
+		if (running_version == p_version) {
+			version_graveyard.push_back(p_version);
+			return true;
+		}
 	}
 
-	version_graveyard.push_back(p_version);
-	return true;
+	// Reusing a version whose SPIR-V is in flight would wait for it in version_set_code().
+	if (SceneShaderForwardMobile::singleton->shader.version_is_compiling(p_version)) {
+		retire_version(p_version);
+		return true;
+	}
+	return false;
 }
 
-void SceneShaderForwardMobile::PipelineCompileThread::drain_deferred_frees() {
+void SceneShaderForwardMobile::PipelineCompileThread::retire_version(RID p_version) {
+	MutexLock lock(mutex);
+	version_graveyard.push_back(p_version);
+}
+
+void SceneShaderForwardMobile::PipelineCompileThread::drain_deferred_frees(bool p_force) {
 	LocalVector<RID> versions;
 	LocalVector<RID> pipelines;
 	{
 		MutexLock lock(mutex);
 		for (uint32_t i = 0; i < version_graveyard.size();) {
-			if (version_graveyard[i] != running_version) {
+			if (p_force || version_graveyard[i] != running_version) {
 				versions.push_back(version_graveyard[i]);
 				version_graveyard.remove_at_unordered(i);
 			} else {
@@ -187,10 +203,27 @@ void SceneShaderForwardMobile::PipelineCompileThread::drain_deferred_frees() {
 		RD::get_singleton()->free_rid(pipeline);
 	}
 
-	if (!versions.is_empty()) {
+	if (versions.is_empty()) {
+		return;
+	}
+
+	ShaderRD &shader = SceneShaderForwardMobile::singleton->shader;
+	LocalVector<RID> still_compiling;
+	{
 		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
 		for (const RID &version : versions) {
-			SceneShaderForwardMobile::singleton->shader.version_free(version);
+			if (!p_force && shader.version_is_compiling(version)) {
+				still_compiling.push_back(version); // version_free() would wait for its SPIR-V on the frame.
+			} else {
+				shader.version_free(version);
+			}
+		}
+	}
+
+	if (!still_compiling.is_empty()) {
+		MutexLock lock(mutex);
+		for (const RID &version : still_compiling) {
+			version_graveyard.push_back(version);
 		}
 	}
 }
@@ -260,7 +293,7 @@ SceneShaderForwardMobile::PipelineCompileThread::~PipelineCompileThread() {
 	high_queue.clear();
 	low_queue.clear();
 	low_index.clear();
-	drain_deferred_frees();
+	drain_deferred_frees(true);
 }
 
 void SceneShaderForwardMobile::set_async_pipeline_compilation(bool p_enabled) {

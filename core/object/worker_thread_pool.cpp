@@ -734,13 +734,10 @@ void WorkerThreadPool::wait_for_group_task_completion(GroupID p_group) {
 	{
 		Group *group = *groupp;
 
-		if (this == singleton) {
-			_unlock_unlockable_mutexes();
-		}
+		// The unlockable locks belong to the calling thread, whichever pool owns the group.
+		_unlock_unlockable_mutexes();
 		group->done_semaphore.wait();
-		if (this == singleton) {
-			_lock_unlockable_mutexes();
-		}
+		_lock_unlockable_mutexes();
 
 		uint32_t max_users = group->tasks_used + 1; // Add 1 because the thread waiting for it is also user. Read before to avoid another thread freeing task after increment.
 		uint32_t finished_users = group->finished.increment(); // fetch happens before inc, so increment later.

@@ -374,14 +374,23 @@ public:
 		void enqueue(ShaderData *p_owner, const ShaderData::PipelineCreateParams &p_params, uint32_t p_hash, bool p_high_priority);
 		void promote(ShaderData *p_owner, uint32_t p_hash);
 		void unregister_owner(ShaderData *p_owner);
+		// Defers the free of a version a pipeline compile is using or whose SPIR-V is still compiling.
 		bool retire_version_if_busy(RID p_version);
-		void drain_deferred_frees();
+		void retire_version(RID p_version);
+		// Frees retired versions nothing uses anymore; p_force frees them all (shutdown).
+		void drain_deferred_frees(bool p_force = false);
 
 		PipelineCompileThread();
 		~PipelineCompileThread();
 	};
 
 	PipelineCompileThread *pipeline_compile_thread = nullptr;
+
+	// Opt-in (RenderingServer.enable_async_shader_compilation), one way. Off: shader and pipeline compilation behave as upstream.
+	SafeFlag async_compilation_enabled;
+	void enable_async_compilation(int p_shader_compile_threads);
+	// The mutex version calls hand off once the version mutex is held, or null to keep the caller's lock (default).
+	_FORCE_INLINE_ Mutex *_singleton_mutex_handoff() { return async_compilation_enabled.is_set() ? &singleton_mutex : nullptr; }
 
 	// Frame-thread SPIR-V handling: no waits for new shader versions, and at most N version compiles started per frame.
 	bool async_shader_variants = false;
