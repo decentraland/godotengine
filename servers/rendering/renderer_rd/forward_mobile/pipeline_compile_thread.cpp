@@ -207,15 +207,15 @@ void SceneShaderForwardMobile::PipelineCompileThread::drain_deferred_frees(bool 
 		return;
 	}
 
-	ShaderRD &shader = SceneShaderForwardMobile::singleton->shader;
+	ShaderRD &scene_shader_rd = SceneShaderForwardMobile::singleton->shader;
 	LocalVector<RID> still_compiling;
 	{
 		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
 		for (const RID &version : versions) {
-			if (!p_force && shader.version_is_compiling(version)) {
+			if (!p_force && scene_shader_rd.version_is_compiling(version)) {
 				still_compiling.push_back(version); // version_free() would wait for its SPIR-V on the frame.
 			} else {
-				shader.version_free(version);
+				scene_shader_rd.version_free(version);
 			}
 		}
 	}
