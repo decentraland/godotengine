@@ -2403,7 +2403,9 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 
 		if (shader->is_pending_nowait()) {
 			should_request_redraw = true;
-			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+			if constexpr (p_pass_mode == PASS_MODE_COLOR || p_pass_mode == PASS_MODE_COLOR_TRANSPARENT) {
+				const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+			}
 			continue;
 		}
 
@@ -2518,7 +2520,9 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 
 		if (!pipeline_valid && async_pipelines) {
 			should_request_redraw = true;
-			const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+			if constexpr (p_pass_mode == PASS_MODE_COLOR || p_pass_mode == PASS_MODE_COLOR_TRANSPARENT) {
+				const_cast<GeometryInstanceForwardMobile *>(inst)->last_skip_frame = frame;
+			}
 		}
 
 		if (pipeline_valid) {

@@ -185,7 +185,9 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 		}
 	}
 
-	if (version.is_null()) {
+	// Only a fresh version starts compiling in version_set_code(); a reused one is started later by version_poll().
+	const bool new_version = version.is_null();
+	if (new_version) {
 		version = SceneShaderForwardMobile::singleton->shader.version_create(false);
 	}
 
@@ -241,9 +243,12 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	print_line("\n**fragment_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT]);
 #endif
 
-	bool start_compile = SceneShaderForwardMobile::singleton->_shader_start_allowed();
-	if (start_compile) {
-		SceneShaderForwardMobile::singleton->_shader_start_taken();
+	bool start_compile = true;
+	if (new_version) {
+		start_compile = SceneShaderForwardMobile::singleton->_shader_start_allowed();
+		if (start_compile) {
+			SceneShaderForwardMobile::singleton->_shader_start_taken();
+		}
 	}
 	variants_ready.clear();
 	SceneShaderForwardMobile::singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX], gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT], gen_code.defines, start_compile);
@@ -561,7 +566,8 @@ bool SceneShaderForwardMobile::ShaderData::is_valid() const {
 bool SceneShaderForwardMobile::ShaderData::is_pending_nowait() {
 	SceneShaderForwardMobile *scene_shader = SceneShaderForwardMobile::singleton;
 	// The opt-in flag is checked first: it is atomic, while the settings behind it are only touched on the render thread.
-	if (scene_shader == nullptr || !scene_shader->async_compilation_enabled.is_set() || !scene_shader->_is_nowait_thread() || !scene_shader->async_shader_variants || variants_ready.is_set() || version.is_null()) {
+	// variants_ready goes before the thread check so the steady state costs one atomic load per surface.
+	if (scene_shader == nullptr || !scene_shader->async_compilation_enabled.is_set() || variants_ready.is_set() || !scene_shader->_is_nowait_thread() || !scene_shader->async_shader_variants || version.is_null()) {
 		return false;
 	}
 
