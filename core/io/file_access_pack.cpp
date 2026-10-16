@@ -49,6 +49,9 @@ Error PackedData::add_pack(const String &p_path, bool p_replace_files, uint64_t 
 void PackedData::add_path(const String &p_pkg_path, const String &p_path, uint64_t p_ofs, uint64_t p_size, const uint8_t *p_md5, PackSource *p_src, bool p_replace_files, bool p_encrypted, bool p_bundle, bool p_delta) {
 	String simplified_path = p_path.simplify_path().trim_prefix("res://");
 	PathMD5 pmd5(simplified_path.md5_buffer());
+	if (simplified_path.ends_with("global_script_class_cache.cfg") || simplified_path.ends_with("uid_cache.bin")) {
+		project_caches_added = true;
+	}
 
 	bool exists = files.has(pmd5);
 
