@@ -48,6 +48,13 @@ jobs:
             ios_simulator: yes
             arch: arm64
             cache-name: ios-template-debug-simulator
+          # VIBE-CODED SPIKE: release template without the SwiftUI @main, for hosting Godot in
+          # another app (React Native). Compiles the godot_host.* changes in CI.
+          - target: template_release
+            ios_simulator: no
+            arch: arm64
+            cache-name: ios-template-release-host
+            extra-flags: embedded_host=yes
     name: Template (target=${{ matrix.target }}, ios_simulator=${{ matrix.ios_simulator }}, arch=${{ matrix.arch }})
 
     steps:
@@ -67,7 +74,7 @@ jobs:
       - name: Compilation (${{matrix.arch}})
         uses: ./.github/actions/godot-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ios_simulator=${{ matrix.ios_simulator }} arch=${{ matrix.arch }}
+          scons-flags: ${{ env.SCONS_FLAGS }} ios_simulator=${{ matrix.ios_simulator }} arch=${{ matrix.arch }} ${{ matrix.extra-flags }}
           platform: ios
           target: ${{ matrix.target }}
 
