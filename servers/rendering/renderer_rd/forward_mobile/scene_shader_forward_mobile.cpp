@@ -31,9 +31,12 @@
 #include "scene_shader_forward_mobile.h"
 #include "core/config/project_settings.h"
 #include "core/math/math_defs.h"
+#include "core/object/worker_thread_pool.h"
 #include "render_forward_mobile.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
+#include "servers/rendering/rendering_server_default.h"
+#include "servers/rendering/rendering_server_globals.h"
 
 using namespace RendererSceneRenderImplementation;
 
@@ -169,14 +172,22 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	Error err = SceneShaderForwardMobile::singleton->compiler.compile(RS::SHADER_SPATIAL, code, &actions, path, gen_code);
 
 	if (err != OK) {
-		if (version.is_valid()) {
-			SceneShaderForwardMobile::singleton->shader.version_free(version);
-			version = RID();
-		}
+		_free_version();
 		ERR_FAIL_MSG("Shader compilation failed.");
 	}
 
-	if (version.is_null()) {
+	PipelineCompileThread *compile_thread = SceneShaderForwardMobile::singleton->pipeline_compile_thread;
+	if (compile_thread != nullptr && version.is_valid()) {
+		// A pipeline or SPIR-V compile in flight may still use this version: recompile into a fresh version instead of waiting.
+		compile_thread->unregister_owner(this);
+		if (compile_thread->retire_version_if_busy(version)) {
+			version = RID();
+		}
+	}
+
+	// Only a fresh version starts compiling in version_set_code(); a reused one is started later by version_poll().
+	const bool new_version = version.is_null();
+	if (new_version) {
 		version = SceneShaderForwardMobile::singleton->shader.version_create(false);
 	}
 
@@ -232,13 +243,21 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	print_line("\n**fragment_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT]);
 #endif
 
-	SceneShaderForwardMobile::singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX], gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT], gen_code.defines);
+	bool start_compile = true;
+	if (new_version) {
+		start_compile = SceneShaderForwardMobile::singleton->_shader_start_allowed();
+		if (start_compile) {
+			SceneShaderForwardMobile::singleton->_shader_start_taken();
+		}
+	}
+	variants_ready.clear();
+	SceneShaderForwardMobile::singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX], gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT], gen_code.defines, start_compile);
 
 	ubo_size = gen_code.uniform_total_size;
 	ubo_offsets = gen_code.uniform_offsets;
 	texture_uniforms = gen_code.texture_uniforms;
 
-	pipeline_hash_map.clear_pipelines();
+	_clear_pipelines();
 
 	// If any form of Alpha Antialiasing is enabled, set the blend mode to alpha to coverage.
 	if (alpha_antialiasing_mode != ALPHA_ANTIALIASING_OFF) {
@@ -278,23 +297,8 @@ Pair<ShaderRD *, RID> SceneShaderForwardMobile::ShaderData::get_native_shader_an
 	}
 }
 
-void SceneShaderForwardMobile::ShaderData::_create_pipeline(PipelineKey p_pipeline_key) {
-#if PRINT_PIPELINE_COMPILATION_KEYS
-	print_line(
-			"HASH:", p_pipeline_key.hash(),
-			"VERSION:", version,
-			"VERTEX:", p_pipeline_key.vertex_format_id,
-			"FRAMEBUFFER:", p_pipeline_key.framebuffer_format_id,
-			"CULL:", p_pipeline_key.cull_mode,
-			"PRIMITIVE:", p_pipeline_key.primitive_type,
-			"VERSION:", p_pipeline_key.version,
-			"SPEC PACKED #0:", p_pipeline_key.shader_specialization.packed_0,
-			"SPEC PACKED #1:", p_pipeline_key.shader_specialization.packed_1,
-			"SPEC PACKED #2:", p_pipeline_key.shader_specialization.packed_2,
-			"RENDER PASS:", p_pipeline_key.render_pass,
-			"WIREFRAME:", p_pipeline_key.wireframe);
-#endif
 
+bool SceneShaderForwardMobile::ShaderData::_build_pipeline_params(const PipelineKey &p_pipeline_key, PipelineCreateParams &r_params) {
 	RD::PipelineColorBlendState::Attachment blend_attachment = blend_mode_to_blend_attachment(BlendMode(blend_mode));
 	RD::PipelineColorBlendState blend_state_blend;
 	blend_state_blend.attachments.push_back(blend_attachment);
@@ -443,10 +447,48 @@ void SceneShaderForwardMobile::ShaderData::_create_pipeline(PipelineKey p_pipeli
 	sc.type = RD::PIPELINE_SPECIALIZATION_CONSTANT_TYPE_BOOL;
 	specialization_constants.push_back(sc);
 
-	RID shader_rid = get_shader_variant(p_pipeline_key.version, p_pipeline_key.ubershader);
-	ERR_FAIL_COND(shader_rid.is_null());
+	r_params.shader = get_shader_variant(p_pipeline_key.version, p_pipeline_key.ubershader);
+	ERR_FAIL_COND_V(r_params.shader.is_null(), false);
 
-	RID pipeline = RD::get_singleton()->render_pipeline_create(shader_rid, p_pipeline_key.framebuffer_format_id, p_pipeline_key.vertex_format_id, primitive_rd, raster_state, multisample_state, depth_stencil_state, blend_state, 0, p_pipeline_key.render_pass, specialization_constants);
+	r_params.key = p_pipeline_key;
+	r_params.primitive = primitive_rd;
+	r_params.raster_state = raster_state;
+	r_params.multisample_state = multisample_state;
+	r_params.depth_stencil_state = depth_stencil_state;
+	r_params.blend_state = blend_state;
+	r_params.specialization_constants = specialization_constants;
+	return true;
+}
+
+void SceneShaderForwardMobile::ShaderData::_create_pipeline(PipelineKey p_pipeline_key) {
+#if PRINT_PIPELINE_COMPILATION_KEYS
+	print_line(
+			"HASH:", p_pipeline_key.hash(),
+			"VERSION:", version,
+			"VERTEX:", p_pipeline_key.vertex_format_id,
+			"FRAMEBUFFER:", p_pipeline_key.framebuffer_format_id,
+			"CULL:", p_pipeline_key.cull_mode,
+			"PRIMITIVE:", p_pipeline_key.primitive_type,
+			"VERSION:", p_pipeline_key.version,
+			"SPEC PACKED #0:", p_pipeline_key.shader_specialization.packed_0,
+			"SPEC PACKED #1:", p_pipeline_key.shader_specialization.packed_1,
+			"SPEC PACKED #2:", p_pipeline_key.shader_specialization.packed_2,
+			"RENDER PASS:", p_pipeline_key.render_pass,
+			"WIREFRAME:", p_pipeline_key.wireframe);
+#endif
+
+	PipelineCreateParams params;
+	if (!_build_pipeline_params(p_pipeline_key, params)) {
+		return;
+	}
+
+	RID pipeline = RD::get_singleton()->render_pipeline_create(params.shader, p_pipeline_key.framebuffer_format_id, p_pipeline_key.vertex_format_id, params.primitive, params.raster_state, params.multisample_state, params.depth_stencil_state, params.blend_state, 0, p_pipeline_key.render_pass, params.specialization_constants);
+
+	// Don't print error when it's expected.
+	if (unlikely(pipeline.is_null() && RD::get_singleton()->get_driver_workarounds().dont_print_on_render_pipeline_creation_failure)) {
+		return;
+	}
+
 	ERR_FAIL_COND(pipeline.is_null());
 
 	pipeline_hash_map.add_compiled_pipeline(p_pipeline_key.hash(), pipeline);
@@ -470,9 +512,18 @@ void SceneShaderForwardMobile::ShaderData::_clear_vertex_input_mask_cache() {
 
 RID SceneShaderForwardMobile::ShaderData::get_shader_variant(ShaderVersion p_shader_version, bool p_ubershader) const {
 	if (version.is_valid()) {
-		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
-		ERR_FAIL_NULL_V(SceneShaderForwardMobile::singleton, RID());
-		return SceneShaderForwardMobile::singleton->shader.version_get_shader(version, p_shader_version + (SceneShaderForwardMobile::singleton->use_fp16 ? SHADER_VERSION_MAX * 2 : 0) + (p_ubershader ? SHADER_VERSION_MAX : 0));
+		SceneShaderForwardMobile::singleton_mutex.lock();
+		if (unlikely(SceneShaderForwardMobile::singleton == nullptr)) {
+			SceneShaderForwardMobile::singleton_mutex.unlock();
+			ERR_FAIL_V(RID());
+		}
+		// With async compilation, singleton_mutex is handed off once the version mutex is held: waiting for this version's SPIR-V must not block other shaders.
+		Mutex *handoff = SceneShaderForwardMobile::singleton->_singleton_mutex_handoff();
+		RID shader_rid = SceneShaderForwardMobile::singleton->shader.version_get_shader(version, p_shader_version + (SceneShaderForwardMobile::singleton->use_fp16 ? SHADER_VERSION_MAX * 2 : 0) + (p_ubershader ? SHADER_VERSION_MAX : 0), handoff);
+		if (handoff == nullptr) {
+			SceneShaderForwardMobile::singleton_mutex.unlock();
+		}
+		return shader_rid;
 	} else {
 		return RID();
 	}
@@ -496,28 +547,61 @@ uint64_t SceneShaderForwardMobile::ShaderData::get_vertex_input_mask(ShaderVersi
 
 bool SceneShaderForwardMobile::ShaderData::is_valid() const {
 	if (version.is_valid()) {
-		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
-		ERR_FAIL_NULL_V(SceneShaderForwardMobile::singleton, false);
-		return SceneShaderForwardMobile::singleton->shader.version_is_valid(version);
+		SceneShaderForwardMobile::singleton_mutex.lock();
+		if (unlikely(SceneShaderForwardMobile::singleton == nullptr)) {
+			SceneShaderForwardMobile::singleton_mutex.unlock();
+			ERR_FAIL_V(false);
+		}
+		Mutex *handoff = SceneShaderForwardMobile::singleton->_singleton_mutex_handoff();
+		bool valid = SceneShaderForwardMobile::singleton->shader.version_is_valid(version, handoff);
+		if (handoff == nullptr) {
+			SceneShaderForwardMobile::singleton_mutex.unlock();
+		}
+		return valid;
 	} else {
 		return false;
 	}
+}
+
+bool SceneShaderForwardMobile::ShaderData::is_pending_nowait() {
+	SceneShaderForwardMobile *scene_shader = SceneShaderForwardMobile::singleton;
+	// The opt-in flag is checked first: it is atomic, while the settings behind it are only touched on the render thread.
+	// variants_ready goes before the thread check so the steady state costs one atomic load per surface.
+	if (scene_shader == nullptr || !scene_shader->async_compilation_enabled.is_set() || variants_ready.is_set() || !scene_shader->_is_nowait_thread() || !scene_shader->async_shader_variants || version.is_null()) {
+		return false;
+	}
+
+	ShaderRD::VersionPoll poll = ShaderRD::VERSION_POLL_PENDING;
+	if (SceneShaderForwardMobile::singleton_mutex.try_lock()) {
+		bool started = false;
+		poll = scene_shader->shader.version_poll(version, scene_shader->_shader_start_allowed(), &started, &SceneShaderForwardMobile::singleton_mutex);
+		if (started) {
+			scene_shader->_shader_start_taken();
+		}
+	}
+
+	if (poll == ShaderRD::VERSION_POLL_READY) {
+		variants_ready.set();
+		return false;
+	}
+	if (poll == ShaderRD::VERSION_POLL_INVALID) {
+		return false; // Callers fall back as for any invalid shader.
+	}
+
+	RenderingServerDefault::redraw_request(); // Keeps polling in low-processor mode until the variants land.
+	return true;
 }
 
 SceneShaderForwardMobile::ShaderData::ShaderData() :
 		shader_list_element(this) {
 	pipeline_hash_map.set_creation_object_and_function(this, &ShaderData::_create_pipeline);
 	pipeline_hash_map.set_compilations(SceneShaderForwardMobile::singleton->pipeline_compilations, &SceneShaderForwardMobile::singleton_mutex);
+	pipeline_hash_map.set_async_functions(&ShaderData::_enqueue_pipeline, &ShaderData::_promote_pipeline);
 }
 
 SceneShaderForwardMobile::ShaderData::~ShaderData() {
-	pipeline_hash_map.clear_pipelines();
-
-	if (version.is_valid()) {
-		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
-		ERR_FAIL_NULL(SceneShaderForwardMobile::singleton);
-		SceneShaderForwardMobile::singleton->shader.version_free(version);
-	}
+	_clear_pipelines();
+	_free_version();
 }
 
 RendererRD::MaterialStorage::ShaderData *SceneShaderForwardMobile::_create_shader_func() {
@@ -536,12 +620,25 @@ void SceneShaderForwardMobile::MaterialData::set_next_pass(RID p_pass) {
 }
 
 bool SceneShaderForwardMobile::MaterialData::update_parameters(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty) {
-	if (shader_data->version.is_valid()) {
-		MutexLock lock(SceneShaderForwardMobile::singleton_mutex);
-		RID base_shader = SceneShaderForwardMobile::singleton->shader.version_get_shader(shader_data->version, (SceneShaderForwardMobile::singleton->use_fp16 ? SHADER_VERSION_MAX * 2 : 0));
-		return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, base_shader, RenderForwardMobile::MATERIAL_UNIFORM_SET, true, true);
-	} else {
+	if (shader_data->is_pending_nowait()) {
+		update_deferred = true;
 		return false;
+	}
+	// A deferred update must notify its users once it lands, even if the uniform set does not change.
+	const bool was_deferred = update_deferred;
+	update_deferred = false;
+
+	if (shader_data->version.is_valid()) {
+		SceneShaderForwardMobile::singleton_mutex.lock();
+		Mutex *handoff = SceneShaderForwardMobile::singleton->_singleton_mutex_handoff();
+		RID base_shader = SceneShaderForwardMobile::singleton->shader.version_get_shader(shader_data->version, (SceneShaderForwardMobile::singleton->use_fp16 ? SHADER_VERSION_MAX * 2 : 0), handoff);
+		bool changed = update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, base_shader, RenderForwardMobile::MATERIAL_UNIFORM_SET, true, true) || was_deferred;
+		if (handoff == nullptr) {
+			SceneShaderForwardMobile::singleton_mutex.unlock();
+		}
+		return changed;
+	} else {
+		return was_deferred;
 	}
 }
 
@@ -933,7 +1030,7 @@ void SceneShaderForwardMobile::set_default_specialization(const ShaderSpecializa
 	default_specialization = p_specialization;
 
 	for (SelfList<ShaderData> *E = shader_list.first(); E; E = E->next()) {
-		E->self()->pipeline_hash_map.clear_pipelines();
+		E->self()->_clear_pipelines();
 	}
 }
 
@@ -972,7 +1069,60 @@ bool SceneShaderForwardMobile::is_multiview_shader_group_enabled() const {
 	return shader.is_group_enabled(SHADER_GROUP_FP32_MULTIVIEW) || shader.is_group_enabled(SHADER_GROUP_FP16_MULTIVIEW);
 }
 
+void SceneShaderForwardMobile::enable_async_compilation(int p_shader_compile_threads) {
+#ifdef THREADS_ENABLED
+	if (async_compilation_enabled.is_set()) {
+		return;
+	}
+
+	// A dedicated pool keeps scene SPIR-V bursts from taking every worker the render cull and physics need.
+	// Groups already in flight keep the pool they were added to.
+	if (p_shader_compile_threads > 0) {
+		shader.set_compile_pool(WorkerThreadPool::get_named_pool(SNAME("SceneShaderCompilation"), p_shader_compile_threads));
+	}
+	set_async_shader_variants(true, 1);
+	set_async_pipeline_compilation(true);
+	async_compilation_enabled.set();
+	print_verbose(vformat("Async shader compilation: Enabled (dedicated shader compile threads: %d)", p_shader_compile_threads));
+#endif
+}
+
+void SceneShaderForwardMobile::set_async_shader_variants(bool p_enabled, uint32_t p_max_new_versions_per_frame) {
+	async_shader_variants = p_enabled;
+	max_new_shader_versions_per_frame = p_enabled ? p_max_new_versions_per_frame : 0;
+	shader.set_unlocked_compile_wait(p_enabled);
+}
+
+bool SceneShaderForwardMobile::_is_nowait_thread() const {
+	// Only the render thread draws the frame; every other thread (pool loaders, GDExtension threads) may wait.
+	RenderingServer *rendering_server = RenderingServer::get_singleton();
+	return rendering_server != nullptr && rendering_server->is_on_render_thread();
+}
+
+bool SceneShaderForwardMobile::_shader_start_allowed() {
+	if (!async_compilation_enabled.is_set() || !_is_nowait_thread() || max_new_shader_versions_per_frame == 0) {
+		return true;
+	}
+	MutexLock lock(shader_start_mutex);
+	const uint64_t frame = RSG::rasterizer->get_frame_number();
+	if (frame != shader_start_frame) {
+		shader_start_frame = frame;
+		shader_starts_in_frame = 0;
+	}
+	return shader_starts_in_frame < max_new_shader_versions_per_frame;
+}
+
+void SceneShaderForwardMobile::_shader_start_taken() {
+	if (!async_compilation_enabled.is_set() || !_is_nowait_thread() || max_new_shader_versions_per_frame == 0) {
+		return;
+	}
+	MutexLock lock(shader_start_mutex);
+	shader_starts_in_frame++;
+}
+
 SceneShaderForwardMobile::~SceneShaderForwardMobile() {
+	set_async_pipeline_compilation(false);
+
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 
 	RD::get_singleton()->free_rid(default_vec4_xform_buffer);

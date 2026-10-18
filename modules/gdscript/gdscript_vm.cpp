@@ -495,6 +495,18 @@ void (*type_init_function_table[])(Variant *) = {
 #define METHOD_CALL_ON_NULL_VALUE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a null value."
 #define METHOD_CALL_ON_FREED_INSTANCE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a previously freed instance."
 
+// Decentraland fork: keep GDScript's freed-instance / null-instance checks in release templates.
+//
+// Upstream compiles these checks only with DEBUG_ENABLED. In a release template a script that calls a
+// method on a node freed during an `await` dereferences the dangling pointer and the process dies with
+// SIGSEGV (Sentry GODOT-EXPLORER-21E, Play Console "CanvasItem::show()" — the largest Android crash family
+// of the Decentraland client), where the debug template reports "Cannot call method 'show' on a previously
+// freed instance" and carries on. The cost is one ObjectDB lookup per object call, cast, typed return and
+// object iteration. Define GDSCRIPT_DISABLE_OBJECT_VALIDATION to restore the upstream release behaviour.
+#if defined(DEBUG_ENABLED) || !defined(GDSCRIPT_DISABLE_OBJECT_VALIDATION)
+#define GDSCRIPT_VALIDATE_OBJECTS
+#endif
+
 Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state) {
 	GodotProfileZoneScript(this, source, name, name, _initial_line);
 
@@ -1622,7 +1634,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				GD_ERR_BREAK(to_type < 0 || to_type >= Variant::VARIANT_MAX);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				if (src->operator Object *() && !src->get_validated_object()) {
 					err_text = "Trying to cast a freed object.";
 					OPCODE_BREAK;
@@ -1652,7 +1664,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GDScriptNativeClass *nc = Object::cast_to<GDScriptNativeClass>(to_type->operator Object *());
 				GD_ERR_BREAK(!nc);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				if (src->operator Object *() && !src->get_validated_object()) {
 					err_text = "Trying to cast a freed object.";
 					OPCODE_BREAK;
@@ -1684,7 +1696,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				GD_ERR_BREAK(!base_type);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				if (src->operator Object *() && !src->get_validated_object()) {
 					err_text = "Trying to cast a freed object.";
 					OPCODE_BREAK;
@@ -1912,6 +1924,18 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_INSTRUCTION_ARG(base, argc);
 				Variant **argptrs = instruction_args;
 
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
+				// Variant::callp() dereferences the object pointer unchecked (its own ObjectDB check only runs
+				// with a debugger attached), so validate here before the call reaches a freed instance.
+				if (base->get_type() == Variant::OBJECT) {
+					bool base_was_freed = false;
+					if (base->get_validated_object_with_check(base_was_freed) == nullptr && base_was_freed) {
+						err_text = "Cannot call method '" + methodname->operator String() + "' on a previously freed instance.";
+						OPCODE_BREAK;
+					}
+				}
+#endif
+
 #ifdef DEBUG_ENABLED
 				uint64_t call_time = 0;
 
@@ -2033,7 +2057,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				GET_INSTRUCTION_ARG(base, argc);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *base_obj = base->get_validated_object_with_check(freed);
 				if (freed) {
@@ -2276,7 +2300,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				GET_INSTRUCTION_ARG(base, argc);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *base_obj = base->get_validated_object_with_check(freed);
 				if (freed) {
@@ -2329,7 +2353,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GodotProfileZoneScriptSystemCall(method, source, name, method->get_name(), line);
 
 				GET_INSTRUCTION_ARG(base, argc);
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *base_obj = base->get_validated_object_with_check(freed);
 				if (freed) {
@@ -2925,7 +2949,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					OPCODE_BREAK;
 				}
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *ret_obj = r->get_validated_object_with_check(freed);
 
@@ -2935,7 +2959,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #else
 				Object *ret_obj = r->operator Object *();
-#endif // DEBUG_ENABLED
+#endif // GDSCRIPT_VALIDATE_OBJECTS
 				if (ret_obj && !ClassDB::is_parent_class(ret_obj->get_class_name(), nc->get_name())) {
 #ifdef DEBUG_ENABLED
 					err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
@@ -2967,7 +2991,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					OPCODE_BREAK;
 				}
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *ret_obj = r->get_validated_object_with_check(freed);
 
@@ -2977,7 +3001,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #else
 				Object *ret_obj = r->operator Object *();
-#endif // DEBUG_ENABLED
+#endif // GDSCRIPT_VALIDATE_OBJECTS
 
 				if (ret_obj) {
 					ScriptInstance *ret_inst = ret_obj->get_script_instance();
@@ -3339,7 +3363,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(counter, 0);
 				GET_VARIANT_PTR(container, 1);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *obj = container->get_validated_object_with_check(freed);
 				if (freed) {
@@ -3706,7 +3730,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(counter, 0);
 				GET_VARIANT_PTR(container, 1);
 
-#ifdef DEBUG_ENABLED
+#ifdef GDSCRIPT_VALIDATE_OBJECTS
 				bool freed = false;
 				Object *obj = container->get_validated_object_with_check(freed);
 				if (freed) {
@@ -3975,6 +3999,32 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 		// Get a default return type in case of failure
 		retvalue = _get_default_variant_for_data_type(return_type);
+#elif defined(GDSCRIPT_VALIDATE_OBJECTS)
+		// Release template: `exit_ok` is not tracked, but every error site sets `err_text` right before
+		// breaking out, so a non-empty message is the error signal. Report it through the script error
+		// handler (carries the GDScript backtrace when call-stack tracking is on) instead of silently
+		// returning, so the freed-instance calls this build now survives stay visible in crash telemetry.
+		if (!err_text.is_empty()) {
+			String err_file;
+			bool instance_valid_with_script = p_instance && ObjectDB::get_instance(p_instance->owner_id) != nullptr && p_instance->script->is_valid();
+			if (instance_valid_with_script && !get_script()->path.is_empty()) {
+				err_file = get_script()->path;
+			} else if (script) {
+				err_file = script->path;
+			}
+			if (err_file.is_empty()) {
+				err_file = "<built-in>";
+			}
+			String err_func = name;
+			if (instance_valid_with_script && p_instance->script->local_name != StringName()) {
+				err_func = p_instance->script->local_name.operator String() + "." + err_func;
+			}
+
+			_err_print_error(err_func.utf8().get_data(), err_file.utf8().get_data(), line, err_text.utf8().get_data(), false, ERR_HANDLER_SCRIPT);
+
+			// Get a default return type in case of failure
+			retvalue = _get_default_variant_for_data_type(return_type);
+		}
 #endif
 
 		OPCODE_OUT;

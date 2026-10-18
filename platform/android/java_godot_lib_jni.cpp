@@ -88,8 +88,18 @@ static Vector3 gravity;
 static Vector3 magnetometer;
 static Vector3 gyroscope;
 
+// Decentraland fork: set when Main::setup2() failed in GodotLib_step. The engine never reached the
+// main loop, so _terminate() must skip Main::cleanup() but still kill the process (see below).
+static bool setup_failed = false;
+
 static void _terminate(JNIEnv *env, bool p_restart = false) {
 	if (step.get() == STEP_TERMINATED) {
+		// Decentraland fork: a failed Main::setup2() already tore the servers down, so there is nothing
+		// to clean up here — but the process must not survive the activity: the next launch would
+		// re-run Main::setup() on top of a half-initialised runtime.
+		if (setup_failed && godot_java) {
+			godot_java->force_quit(env);
+		}
 		return;
 	}
 
@@ -274,7 +284,22 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_step(JNIEnv *env,
 	if (step.get() == STEP_SETUP) {
 		// Since Godot is initialized on the UI thread, main_thread_id was set to that thread's id,
 		// but for Godot purposes, the main thread is the one running the game loop
-		Main::setup2(false); // The logo is shown in the next frame otherwise we run into rendering issues
+		Error err = Main::setup2(false); // The logo is shown in the next frame otherwise we run into rendering issues
+		if (err != OK) {
+			// Decentraland fork: the display/rendering server could not be created (unsupported GPU
+			// driver). DisplayServerAndroid::create_func() already showed the "Unable to initialize ...
+			// video driver" alert and Main::setup2() unwound the servers. Upstream advances to
+			// STEP_SHOW_LOGO regardless, so the next GodotLib.focusout() queued by
+			// GodotVulkanRenderView.onActivityPaused() dereferences a null DisplayServer inside
+			// DisplayServerAndroid::send_window_event() (Play Console cluster "Callable::is_valid()",
+			// ~8% of the Decentraland client's Android crash users, all on low-end Mali devices).
+			// Stop here instead: every JNI entry point bails out on STEP_TERMINATED, the alert stays on
+			// screen, and the process is killed when the activity is destroyed (see _terminate()).
+			ERR_PRINT(vformat("Main::setup2() failed with error %d; the main loop will not start.", (int)err));
+			setup_failed = true;
+			step.set(STEP_TERMINATED);
+			return true;
+		}
 		input_handler = new AndroidInputHandler();
 		step.increment();
 		return true;

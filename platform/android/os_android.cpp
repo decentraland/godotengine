@@ -413,7 +413,11 @@ void OS_Android::_on_main_screen_changed(const String &p_screen_name) {
 #endif
 
 void OS_Android::main_loop_focusout() {
-	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_OUT);
+	// The display server is null if Main::setup2() failed (see GodotLib_step); the focus event can still
+	// arrive from the activity lifecycle, so guard instead of dereferencing it.
+	if (DisplayServerAndroid *ds = DisplayServerAndroid::get_singleton()) {
+		ds->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_OUT);
+	}
 	if (OS::get_singleton()->get_main_loop()) {
 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_OUT);
 	}
@@ -421,7 +425,9 @@ void OS_Android::main_loop_focusout() {
 }
 
 void OS_Android::main_loop_focusin() {
-	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_IN);
+	if (DisplayServerAndroid *ds = DisplayServerAndroid::get_singleton()) {
+		ds->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_IN);
+	}
 	if (OS::get_singleton()->get_main_loop()) {
 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_IN);
 	}

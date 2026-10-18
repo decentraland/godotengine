@@ -113,6 +113,7 @@ private:
 
 	static inline PackedData *singleton = nullptr;
 	bool disabled = false;
+	bool project_caches_added = false;
 
 	void _free_packed_dirs(PackedDir *p_dir);
 	void _get_file_paths(PackedDir *p_dir, const String &p_parent_dir, HashSet<String> &r_paths) const;
@@ -128,6 +129,12 @@ public:
 
 	void set_disabled(bool p_disabled) { disabled = p_disabled; }
 	_FORCE_INLINE_ bool is_disabled() const { return disabled; }
+	// Set when a pack adds the global class cache or the UID cache; reset by the caller.
+	bool take_project_caches_added() {
+		bool r = project_caches_added;
+		project_caches_added = false;
+		return r;
+	}
 
 	static PackedData *get_singleton() { return singleton; }
 	Error add_pack(const String &p_path, bool p_replace_files, uint64_t p_offset);

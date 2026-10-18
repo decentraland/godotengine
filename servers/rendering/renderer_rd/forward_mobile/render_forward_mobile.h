@@ -73,6 +73,7 @@ private:
 	/* Scene Shader */
 
 	SceneShaderForwardMobile scene_shader;
+	bool disable_ubershaders = false;
 
 	/* Render Buffer */
 
@@ -554,6 +555,11 @@ protected:
 
 		GeometryInstanceSurfaceDataCache *surface_caches = nullptr;
 
+		// Draw readiness (render thread): last color-pass frame that drew a surface, last frame that skipped one.
+		uint64_t last_drawn_frame = 0;
+		uint64_t last_skip_frame = 0;
+		bool has_pending_surfaces = false;
+
 		// do we use this?
 		SelfList<GeometryInstanceForwardMobile> dirty_list_element;
 
@@ -572,6 +578,7 @@ protected:
 		virtual void pair_voxel_gi_instances(const RID *p_voxel_gi_instances, uint32_t p_voxel_gi_instance_count) override {}
 
 		virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) override;
+		virtual bool is_draw_ready() const override;
 	};
 
 	/* Rendering */
@@ -711,6 +718,7 @@ public:
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) override;
 	virtual uint32_t get_pipeline_compilations(RS::PipelineSource p_source) override;
+	virtual void enable_async_shader_compilation(int p_shader_compile_threads) override;
 
 	/* SHADER LIBRARY */
 

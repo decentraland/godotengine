@@ -224,7 +224,10 @@ def configure(env: "SConsEnvironment"):
     # Link flags
 
     env.Append(LINKFLAGS=["-Wl,--gc-sections", "-Wl,--no-undefined", "-Wl,-z,now"])
-    env.Append(LINKFLAGS=["-Wl,--build-id"])
+    # sha1 (20 bytes): LLD's default `fast` emits an 8-byte id, which sentry-java's
+    # tombstone parser cannot convert to a debug-id, leaving every engine frame
+    # of an Android tombstone crash unsymbolicated in Sentry.
+    env.Append(LINKFLAGS=["-Wl,--build-id=sha1"])
     env.Append(LINKFLAGS=["-Wl,-soname,libgodot_android.so"])
 
     env.Prepend(CPPPATH=["#platform/android"])
