@@ -596,12 +596,14 @@ bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_f
 		using_datapack = true;
 	}
 
+	PackedData::get_singleton()->take_project_caches_added();
 	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files, p_offset) == OK;
 	if (!ok) {
 		return false;
 	}
 
-	if (project_loaded) {
+	// Re-parsing both caches costs ~14 ms per mount on mobile; skip it for asset-only packs.
+	if (project_loaded && PackedData::get_singleton()->take_project_caches_added()) {
 		// This pack may have declared new global classes (make sure they are picked up).
 		refresh_global_class_list();
 

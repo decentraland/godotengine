@@ -37,9 +37,16 @@
 
 template <typename Key, typename CreationClass, typename CreationFunction>
 class PipelineHashMapRD {
+public:
+	// Returns true when the request was handed to a background compiler that publishes through async_pipeline_finished().
+	typedef bool (CreationClass::*AsyncFunction)(const Key &, uint32_t, RS::PipelineSource);
+	typedef void (CreationClass::*PromoteFunction)(uint32_t);
+
 private:
 	CreationClass *creation_object = nullptr;
 	CreationFunction creation_function = nullptr;
+	AsyncFunction async_function = nullptr;
+	PromoteFunction promote_function = nullptr;
 	Mutex *compilations_mutex = nullptr;
 	uint32_t *compilations = nullptr;
 	RBMap<uint32_t, RID> hash_map;
@@ -51,16 +58,30 @@ private:
 
 	bool _add_new_pipelines_to_map() {
 		thread_local Vector<uint32_t> hashes_added;
+		thread_local LocalVector<RID> duplicates;
 		hashes_added.clear();
+		duplicates.clear();
 
 		{
 			MutexLock lock(compiled_queue_mutex);
 			for (const Pair<uint32_t, RID> &pair : compiled_queue) {
-				hash_map[pair.first] = pair.second;
+				// Keep the first valid pipeline of a key: a late duplicate or a failed (null) result must not replace it.
+				typename RBMap<uint32_t, RID>::Element *existing = hash_map.find(pair.first);
+				if (existing != nullptr && existing->value().is_valid()) {
+					if (pair.second.is_valid()) {
+						duplicates.push_back(pair.second);
+					}
+				} else {
+					hash_map[pair.first] = pair.second;
+				}
 				hashes_added.push_back(pair.first);
 			}
 
 			compiled_queue.clear();
+		}
+
+		for (const RID &duplicate : duplicates) {
+			RD::get_singleton()->free_rid(duplicate);
 		}
 
 		{
@@ -122,16 +143,21 @@ public:
 	void compile_pipeline(const Key &p_key, uint32_t p_key_hash, RS::PipelineSource p_source, bool p_high_priority) {
 		DEV_ASSERT((creation_object != nullptr) && (creation_function != nullptr) && "Creation object and function was not set before attempting to compile a pipeline.");
 
+		bool already_submitted = false;
 		{
 			MutexLock local_lock(local_mutex);
-			if (compilation_set.has(p_key_hash)) {
-				// Already compiled (or compiling inline on another thread). Its result
-				// is—or will imminently be—published to the compiled queue; skip.
-				return;
+			already_submitted = compilation_set.has(p_key_hash);
+			if (!already_submitted) {
+				// Record the pipeline as submitted, it won't be compiled again.
+				compilation_set.insert(p_key_hash);
 			}
+		}
 
-			// Record the pipeline as submitted, it won't be compiled again.
-			compilation_set.insert(p_key_hash);
+		if (already_submitted) {
+			if (promote_function != nullptr && (p_source == RS::PIPELINE_SOURCE_DRAW || p_source == RS::PIPELINE_SOURCE_SPECIALIZATION)) {
+				(creation_object->*promote_function)(p_key_hash);
+			}
+			return;
 		}
 
 		if (compilations_mutex != nullptr) {
@@ -166,7 +192,16 @@ public:
 		// than queuing a background pool task. Runs the same creation function a pool
 		// task would have run; it publishes the pipeline via add_compiled_pipeline().
 		(void)p_high_priority;
+		if (async_function != nullptr && (creation_object->*async_function)(p_key, p_key_hash, p_source)) {
+			return;
+		}
+
 		(creation_object->*creation_function)(p_key);
+	}
+
+	// Called by the async compiler; p_pipeline may be null to record a failed compile.
+	void async_pipeline_finished(uint32_t p_hash, RID p_pipeline) {
+		add_compiled_pipeline(p_hash, p_pipeline);
 	}
 
 	void wait_for_pipeline(uint32_t p_key_hash) {
@@ -237,6 +272,8 @@ public:
 		}
 
 		hash_map.clear();
+
+		MutexLock local_lock(local_mutex);
 		compilation_set.clear();
 	}
 
@@ -249,6 +286,11 @@ public:
 	void set_creation_object_and_function(CreationClass *p_creation_object, CreationFunction p_creation_function) {
 		creation_object = p_creation_object;
 		creation_function = p_creation_function;
+	}
+
+	void set_async_functions(AsyncFunction p_async_function, PromoteFunction p_promote_function) {
+		async_function = p_async_function;
+		promote_function = p_promote_function;
 	}
 
 	PipelineHashMapRD() {}

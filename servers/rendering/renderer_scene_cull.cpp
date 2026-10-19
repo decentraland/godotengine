@@ -1568,6 +1568,20 @@ Variant RendererSceneCull::instance_geometry_get_shader_parameter(RID p_instance
 	return instance->instance_uniforms.get(p_parameter);
 }
 
+bool RendererSceneCull::instance_geometry_is_draw_ready(RID p_instance) const {
+	const Instance *instance = instance_owner.get_or_null(p_instance);
+	ERR_FAIL_NULL_V(instance, true);
+	if (!((1 << instance->base_type) & RS::INSTANCE_GEOMETRY_MASK) || !instance->base_data) {
+		return true;
+	}
+	const RenderGeometryInstance *geometry_instance = static_cast<const InstanceGeometryData *>(instance->base_data)->geometry_instance;
+	return geometry_instance == nullptr || geometry_instance->is_draw_ready();
+}
+
+void RendererSceneCull::enable_async_shader_compilation(int p_shader_compile_threads) {
+	scene_render->enable_async_shader_compilation(p_shader_compile_threads);
+}
+
 Variant RendererSceneCull::instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &p_parameter) const {
 	const Instance *instance = instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL_V(instance, Variant());

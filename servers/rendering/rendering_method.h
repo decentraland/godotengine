@@ -115,6 +115,8 @@ public:
 	virtual void instance_geometry_set_shader_parameter(RID p_instance, const StringName &p_parameter, const Variant &p_value) = 0;
 	virtual void instance_geometry_get_shader_parameter_list(RID p_instance, List<PropertyInfo> *p_parameters) const = 0;
 	virtual Variant instance_geometry_get_shader_parameter(RID p_instance, const StringName &p_parameter) const = 0;
+	virtual bool instance_geometry_is_draw_ready(RID p_instance) const = 0;
+	virtual void enable_async_shader_compilation(int p_shader_compile_threads) = 0;
 	virtual Variant instance_geometry_get_shader_parameter_default_value(RID p_instance, const StringName &p_parameter) const = 0;
 
 	/* PIPELINES */
