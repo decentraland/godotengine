@@ -54,6 +54,7 @@
 #import "rendering_context_driver_metal.h"
 #import "rendering_shader_container_metal.h"
 
+#include "core/io/dir_access.h"
 #include "core/io/marshalls.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
@@ -1648,8 +1649,10 @@ String RenderingDeviceDriverMetal::_pipeline_get_cache_path() const {
 }
 
 bool RenderingDeviceDriverMetal::pipeline_cache_create(const Vector<uint8_t> &p_data) {
-	return false;
 	CharString path = _pipeline_get_cache_path().utf8();
+	// The RD only creates the directory of its own (vulkan) cache path, so make ours here or the
+	// archive descriptor points at a missing folder and the archive comes back nil.
+	DirAccess::make_dir_recursive_absolute(String::utf8(path.get_data()).get_base_dir());
 	NSString *nPath = [[NSString alloc] initWithBytesNoCopy:path.ptrw()
 													 length:path.length()
 												   encoding:NSUTF8StringEncoding
@@ -1685,11 +1688,13 @@ Vector<uint8_t> RenderingDeviceDriverMetal::pipeline_cache_serialize() {
 	NSURL *target = [NSURL fileURLWithPath:nPath];
 	NSError *error = nil;
 	if ([archive serializeToURL:target error:&error]) {
-		return Vector<uint8_t>();
+		// The archive carries the binary code for every pipeline it holds, so the next launch
+		// reads them from disk instead of compiling.
+		print_verbose(vformat("Metal pipeline cache written to %s", nPath));
 	} else {
 		print_line(error.localizedDescription.UTF8String);
-		return Vector<uint8_t>();
 	}
+	return Vector<uint8_t>();
 }
 
 #pragma mark - Rendering
