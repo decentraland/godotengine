@@ -31,21 +31,21 @@ jobs:
             target: editor
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.editor.universal"
+            bin: "./bin/godot.macos.editor.arm64"
 
           - name: Template (target=template_release)
             cache-name: macos-template-release
             target: template_release
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.template_release.universal"
+            bin: "./bin/godot.macos.template_release.arm64"
 
           - name: Template (target=template_debug)
             cache-name: macos-template-debug
             target: template_debug
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.template_debug.universal"
+            bin: "./bin/godot.macos.template_debug.arm64"
 
     steps:
       - uses: actions/checkout@v4
@@ -93,13 +93,7 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Compilation (x86_64)
-        uses: ./.github/actions/godot-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
-          platform: macos
-          target: ${{ matrix.target }}
-
+      # Apple Silicon only: nothing we ship targets Intel Macs, and a universal build compiles everything twice.
       - name: Compilation (arm64)
         uses: ./.github/actions/godot-build
         with:
@@ -115,8 +109,6 @@ jobs:
 
       - name: Prepare artifact
         run: |
-          lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
-          rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
           strip bin/godot.*
           chmod +x bin/godot.*
 
