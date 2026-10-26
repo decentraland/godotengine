@@ -17,10 +17,6 @@ env:
   GODOT_VERSION: 4.6.2.stable
   GODOT_BASE_VERSION: "4.6.2"
 
-concurrency:
-  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-process-templates
-  cancel-in-progress: true
-
 jobs:
   process-templates:
     runs-on: "warp-ubuntu-2404-x64-2x"
