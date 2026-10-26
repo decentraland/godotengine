@@ -24,6 +24,8 @@ jobs:
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
+      # macOS runners are capped org-wide (5 slots shared with other repos): one macOS + one iOS job at a time.
+      max-parallel: 1
       matrix:
         include:
           - name: Editor (target=editor)
