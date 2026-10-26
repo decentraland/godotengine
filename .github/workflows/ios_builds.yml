@@ -26,6 +26,8 @@ jobs:
   ios-template:
     runs-on: "macos-latest"
     strategy:
+      # macOS runners are capped org-wide (5 slots shared with other repos): one macOS + one iOS job at a time.
+      max-parallel: 1
       matrix:
         include:
           - target: template_release
