@@ -7372,6 +7372,12 @@ void RenderingDevice::update_pipeline_cache(bool p_closing) {
 	}
 }
 
+void RenderingDevice::save_pipeline_cache() {
+	if (pipeline_cache_enabled) {
+		update_pipeline_cache(true);
+	}
+}
+
 void RenderingDevice::_save_pipeline_cache(void *p_data) {
 	RenderingDevice *self = static_cast<RenderingDevice *>(p_data);
 
@@ -7908,6 +7914,7 @@ void RenderingDevice::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_device_vendor_name"), &RenderingDevice::get_device_vendor_name);
 	ClassDB::bind_method(D_METHOD("get_device_name"), &RenderingDevice::get_device_name);
 	ClassDB::bind_method(D_METHOD("get_device_pipeline_cache_uuid"), &RenderingDevice::get_device_pipeline_cache_uuid);
+	ClassDB::bind_method(D_METHOD("save_pipeline_cache"), &RenderingDevice::save_pipeline_cache);
 
 	ClassDB::bind_method(D_METHOD("get_memory_usage", "type"), &RenderingDevice::get_memory_usage);
 

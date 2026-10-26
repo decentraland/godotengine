@@ -1671,7 +1671,9 @@ void RenderingDeviceDriverMetal::pipeline_cache_free() {
 }
 
 size_t RenderingDeviceDriverMetal::pipeline_cache_query_size() {
-	return archive_count * 1024;
+	// Metal exposes no size for a binary archive; this only drives the RD's save-chunk heuristic,
+	// and 16 KiB per pipeline keeps a cold scene's burst inside one or two writes.
+	return archive_count * 16 * 1024;
 }
 
 Vector<uint8_t> RenderingDeviceDriverMetal::pipeline_cache_serialize() {
