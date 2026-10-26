@@ -22,10 +22,6 @@ env:
   GODOT_BASE_BRANCH: 4.6
   SCONS_FLAGS: verbose=yes warnings=no production=yes debug_symbols=yes
 
-concurrency:
-  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-ios
-  cancel-in-progress: true
-
 jobs:
   ios-template:
     runs-on: "macos-latest"
