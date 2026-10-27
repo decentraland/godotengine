@@ -27,13 +27,9 @@ env:
   TSAN_OPTIONS: color=always:print_suppressions=1:suppressions=${{ github.workspace }}/misc/error_suppressions/tsan.txt
   UBSAN_OPTIONS: color=always:print_suppressions=1:suppressions=${{ github.workspace }}/misc/error_suppressions/ubsan.txt
 
-concurrency:
-  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-linux
-  cancel-in-progress: true
-
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     name: ${{ matrix.name }}
     timeout-minutes: 120
     strategy:

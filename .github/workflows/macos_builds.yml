@@ -18,16 +18,14 @@ env:
     module_text_server_fb_enabled=yes
     "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
 
-concurrency:
-  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-macos
-  cancel-in-progress: true
-
 jobs:
   build-macos:
     runs-on: "macos-latest"
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
+      # One job at a time; runner.yml queues this workflow repo-wide (see the concurrency block there).
+      max-parallel: 1
       matrix:
         include:
           - name: Editor (target=editor)
@@ -35,21 +33,21 @@ jobs:
             target: editor
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.editor.universal"
+            bin: "./bin/godot.macos.editor.arm64"
 
           - name: Template (target=template_release)
             cache-name: macos-template-release
             target: template_release
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.template_release.universal"
+            bin: "./bin/godot.macos.template_release.arm64"
 
           - name: Template (target=template_debug)
             cache-name: macos-template-debug
             target: template_debug
             tests: true
             scons-flags: production=yes
-            bin: "./bin/godot.macos.template_debug.universal"
+            bin: "./bin/godot.macos.template_debug.arm64"
 
     steps:
       - uses: actions/checkout@v4
@@ -97,13 +95,7 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Compilation (x86_64)
-        uses: ./.github/actions/godot-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
-          platform: macos
-          target: ${{ matrix.target }}
-
+      # Apple Silicon only: nothing we ship targets Intel Macs, and a universal build compiles everything twice.
       - name: Compilation (arm64)
         uses: ./.github/actions/godot-build
         with:
@@ -119,8 +111,6 @@ jobs:
 
       - name: Prepare artifact
         run: |
-          lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
-          rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
           strip bin/godot.*
           chmod +x bin/godot.*
 

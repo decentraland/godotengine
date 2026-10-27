@@ -1,8 +1,18 @@
 name: 🔗 GHA
-on: [push, pull_request, merge_group, workflow_dispatch]
+# Pushes only build release branches. Feature branches build through their PR (the branch merged into its
+# base), or on demand with "Run workflow" while they have no PR yet.
+on:
+  push:
+    branches: ["4.*"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
 
+# One run per branch or PR: a newer run cancels the older one. The base branch is keyed by commit instead,
+# so every commit there still publishes its SHA-tagged templates (keep in sync with GODOT_BASE_VERSION in
+# process_templates.yml).
 concurrency:
-  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-runner
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/4.6.2' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,6 +37,11 @@ jobs:
 
   ios-build:
     name: 🍏 iOS
+    # Repo-wide queue across all runs: with max-parallel: 1 in the called workflow, this repo holds at most
+    # 2 of the org's 5 macOS runners (one macOS + one iOS job). Queued jobs wait instead of being cancelled.
+    concurrency:
+      group: ci-macos-runners-ios
+      queue: max
     #needs: static-checks
     uses: ./.github/workflows/ios_builds.yml
     secrets:
@@ -47,6 +62,10 @@ jobs:
 
   macos-build:
     name: 🍎 macOS
+    # Repo-wide queue, see ios-build.
+    concurrency:
+      group: ci-macos-runners-macos
+      queue: max
     #needs: static-checks
     uses: ./.github/workflows/macos_builds.yml
     secrets:
@@ -74,3 +93,28 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+  # The build jobs stage their binaries in R2 under artifacts/<run_id>/. Delete them once the run succeeded or
+  # was cancelled (superseded runs never reach the end of Process templates). Not after a failure: "Re-run
+  # failed jobs" keeps the same run_id and needs the successful jobs' artifacts; its success cleans up.
+  cleanup-r2:
+    name: Clean up R2 staging
+    needs: [android-build, ios-build, linux-build, macos-build, windows-build, process-templates]
+    if: success() || cancelled()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete temporary artifacts from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "${R2_BUCKET}" ]; then
+            echo "No R2 secrets (fork PR), nothing to clean up."
+            exit 0
+          fi
+          aws s3 rm "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          echo "✓ Cleaned up artifacts/${RUN_ID}/"
