@@ -26,6 +26,9 @@ jobs:
   ios-template:
     runs-on: "macos-latest"
     strategy:
+      fail-fast: false
+      # One job at a time; runner.yml queues this workflow repo-wide (see the concurrency block there).
+      max-parallel: 1
       matrix:
         include:
           - target: template_release
