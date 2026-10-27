@@ -94,12 +94,13 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-  # The build jobs stage their binaries in R2 under artifacts/<run_id>/. always() also runs this after a
-  # cancelled or failed run, which never reaches the end of Process templates.
+  # The build jobs stage their binaries in R2 under artifacts/<run_id>/. Delete them once the run succeeded or
+  # was cancelled (superseded runs never reach the end of Process templates). Not after a failure: "Re-run
+  # failed jobs" keeps the same run_id and needs the successful jobs' artifacts; its success cleans up.
   cleanup-r2:
     name: Clean up R2 staging
     needs: [android-build, ios-build, linux-build, macos-build, windows-build, process-templates]
-    if: always()
+    if: success() || cancelled()
     runs-on: ubuntu-24.04
     steps:
       - name: Delete temporary artifacts from R2
