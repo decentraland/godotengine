@@ -15,6 +15,7 @@ on:
 # Global Settings
 env:
   GODOT_VERSION: 4.6.2.stable
+  # Also the base branch in runner.yml's concurrency group.
   GODOT_BASE_VERSION: "4.6.2"
 
 jobs:
@@ -128,6 +129,8 @@ jobs:
           chmod +x Godot.app/Contents/MacOS/Godot
           zip -q -9 -r "editors/godot.${{ env.GODOT_VERSION }}.macos.editor.arm64.zip" Godot.app
 
+      # arm64 only. Godot's macOS exporter picks godot_macos_<debug|release>.<binary_format/architecture>, so a
+      # macOS export preset must set binary_format/architecture="arm64": the default "universal" finds no binary.
       - name: Prepare Templates MacOS Files
         run: |
           cp -r misc/dist/macos_template.app .
@@ -179,13 +182,3 @@ jobs:
         run: |
           aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
           echo "✓ Uploaded compressed templates to: ${UPLOAD_PATH}/compressed-templates/"
-
-      - name: Cleanup temporary artifacts from R2
-        env:
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          RUN_ID="${{ github.run_id }}"
-          echo "Cleaning up temporary artifacts for run ${RUN_ID}..."
-          aws s3 rm "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" --recursive --endpoint-url "${R2_ENDPOINT}"
-          echo "✓ Cleaned up artifacts/${RUN_ID}/"
