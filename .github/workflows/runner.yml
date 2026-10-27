@@ -32,6 +32,11 @@ jobs:
   ios-build:
     name: 🍏 iOS
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    # Repo-wide queue across all runs: with max-parallel: 1 in the called workflow, this repo holds at most
+    # 2 of the org's 5 macOS runners (one macOS + one iOS job). Queued jobs wait instead of being cancelled.
+    concurrency:
+      group: ci-macos-runners-ios
+      queue: max
     #needs: static-checks
     uses: ./.github/workflows/ios_builds.yml
     secrets:
@@ -54,6 +59,11 @@ jobs:
   macos-build:
     name: 🍎 macOS
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    # Repo-wide queue across all runs: with max-parallel: 1 in the called workflow, this repo holds at most
+    # 2 of the org's 5 macOS runners (one macOS + one iOS job). Queued jobs wait instead of being cancelled.
+    concurrency:
+      group: ci-macos-runners-macos
+      queue: max
     #needs: static-checks
     uses: ./.github/workflows/macos_builds.yml
     secrets:
