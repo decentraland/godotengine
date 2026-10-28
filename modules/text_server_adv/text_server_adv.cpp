@@ -1075,6 +1075,11 @@ _FORCE_INLINE_ TextServerAdvanced::FontGlyph TextServerAdvanced::rasterize_msdf(
 		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, -1, true, String("FontServerRasterizeMSDF"));
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 
+		// Overlapping or self-intersecting contours (common in variable and CJK fonts) leave
+		// texels with the wrong inside/outside sign. Fix them from the nonzero fill, as msdfgen's
+		// own scanline pass does; distance checks would undo the fix.
+		msdfgen::distanceSignCorrection(image, shape, projection, msdfgen::FILL_NONZERO);
+		config.errorCorrection.distanceCheckMode = msdfgen::ErrorCorrectionConfig::DO_NOT_CHECK_DISTANCE;
 		msdfgen::msdfErrorCorrection(image, shape, projection, p_pixel_range, config);
 
 		{
