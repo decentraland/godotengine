@@ -368,7 +368,7 @@ Ref<TriangleMesh> Label3D::generate_triangle_mesh() const {
 	return triangle_mesh;
 }
 
-void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, float p_outline_size, bool p_outline_only) {
+void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, float p_outline_size, bool p_outline_only, bool p_decoration) {
 	if (p_glyph.index == 0) {
 		r_offset.x += p_glyph.advance * pixel_size * p_glyph.repeat; // Non visual character, skip.
 		return;
@@ -404,6 +404,22 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 	}
 
 	bool msdf = TS->font_is_multichannel_signed_distance_field(p_glyph.font_rid);
+
+	// Color glyphs (emoji) are RGBA bitmaps. A shadow or outline pass would cover them with a
+	// solid copy, and modulate would tint them, so draw them once and untinted, like the 2D path.
+	Color glyph_modulate = p_modulate;
+	if (!msdf && p_glyph.font_rid.is_valid()) {
+		RID fill_tex = TS->font_get_glyph_texture_rid(p_glyph.font_rid, Vector2i(p_glyph.font_size, 0), p_glyph.index);
+		if (fill_tex.is_valid() && RS::get_singleton()->texture_get_format(fill_tex) == Image::FORMAT_RGBA8) {
+			if (p_decoration) {
+				r_offset.x += p_glyph.advance * pixel_size * p_glyph.repeat;
+				return;
+			}
+			if (!TS->font_is_modulate_color_glyphs(p_glyph.font_rid)) {
+				glyph_modulate = Color(1, 1, 1, p_modulate.a);
+			}
+		}
+	}
 
 	for (int j = 0; j < p_glyph.repeat; j++) {
 		SurfaceKey key = SurfaceKey(tex.get_id(), p_priority, p_outline_size_i, p_outline_only);
@@ -473,7 +489,7 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 1] = 0.0;
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 2] = 0.0;
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 3] = 1.0;
-			s.mesh_colors.write[(s.offset * 4) + i] = p_modulate;
+			s.mesh_colors.write[(s.offset * 4) + i] = glyph_modulate;
 			s.mesh_uvs.write[(s.offset * 4) + i] = Vector2();
 		}
 
@@ -688,12 +704,12 @@ void Label3D::_shape() {
 			if (shadow_outline_size > 0.0) {
 				Vector2 sh_offset = shadow_base;
 				for (int j = 0; j < gl_size; j++) {
-					_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, shadow_outline_size);
+					_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, shadow_outline_size, false, true);
 				}
 			}
 			Vector2 sh_offset = shadow_base;
 			for (int j = 0; j < gl_size; j++) {
-				_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority);
+				_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, 0.0, false, true);
 			}
 		}
 
@@ -706,7 +722,7 @@ void Label3D::_shape() {
 			// outline does not occlude the text when drawn in front of it.
 			Vector2 ol_offset = offset;
 			for (int j = 0; j < gl_size; j++) {
-				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, eff_outline_size, true);
+				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, eff_outline_size, true, true);
 			}
 		}
 
