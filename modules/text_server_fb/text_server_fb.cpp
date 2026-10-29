@@ -33,6 +33,7 @@
 #ifdef GDEXTENSION
 // Headers for building as GDExtension plug-in.
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -49,6 +50,7 @@ using namespace godot;
 #elif defined(GODOT_MODULE)
 // Headers for building as built-in module.
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
 #include "core/io/file_access.h"
@@ -331,6 +333,15 @@ _FORCE_INLINE_ TextServerFallback::FontTexturePosition TextServerFallback::find_
 				}
 			} else {
 				ERR_FAIL_V(ret);
+			}
+		}
+		// Full MSDF pages never change again: once uploaded, keep only the GPU copy. The editor keeps
+		// the images, imported pre-renders are saved from them.
+		if (p_msdf && !Engine::get_singleton()->is_editor_hint()) {
+			for (int32_t i = 0; i < p_data->textures.size(); i++) {
+				if (!ct[i].dirty && ct[i].texture.is_valid()) {
+					ct[i].image.unref();
+				}
 			}
 		}
 		p_data->textures.push_back(tex);
@@ -753,7 +764,8 @@ bool TextServerFallback::_ensure_glyph(FontFallback *p_font_data, const Vector2i
 		bool tx_valid = true;
 		if (E->value.texture_idx >= 0) {
 			if (E->value.texture_idx < fd->textures.size()) {
-				tx_valid = fd->textures[E->value.texture_idx].image.is_valid();
+				// Full MSDF pages keep only their GPU texture.
+				tx_valid = fd->textures[E->value.texture_idx].image.is_valid() || fd->textures[E->value.texture_idx].texture.is_valid();
 			} else {
 				tx_valid = false;
 			}
@@ -1498,6 +1510,9 @@ void TextServerFallback::_font_set_generate_mipmaps(const RID &p_font_rid, bool 
 	if (fd->mipmaps != p_generate_mipmaps) {
 		for (KeyValue<Vector2i, FontForSizeFallback *> &E : fd->cache) {
 			for (int i = 0; i < E.value->textures.size(); i++) {
+				if (E.value->textures[i].image.is_null()) {
+					continue; // Full page, only on the GPU.
+				}
 				E.value->textures.write[i].dirty = true;
 				E.value->textures.write[i].texture = Ref<ImageTexture>();
 			}
