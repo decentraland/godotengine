@@ -170,7 +170,7 @@ private:
 	bool dirty_font = true;
 	bool dirty_text = true;
 
-	void _generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority = 0, float p_outline_size = 0.0, bool p_outline_only = false);
+	void _generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority = 0, float p_outline_size = 0.0, bool p_outline_only = false, bool p_decoration = false);
 
 	struct StyleSpan {
 		String text;
