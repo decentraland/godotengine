@@ -1145,7 +1145,10 @@ _FORCE_INLINE_ TextServerAdvanced::FontGlyph TextServerAdvanced::rasterize_msdf(
 		td.projection = &projection;
 		td.distancePixelConversion = &distancePixelConversion;
 
-		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, -1, true, String("FontServerRasterizeMSDF"));
+		// Off the main thread (e.g. glyphs pre-rendered in the background), leave half the cores
+		// free: saturating all of them stalls the main thread on phones.
+		int msdf_tasks = WorkerThreadPool::get_singleton()->get_thread_index() >= 0 ? MAX(1, WorkerThreadPool::get_singleton()->get_thread_count() / 2) : -1;
+		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, msdf_tasks, true, String("FontServerRasterizeMSDF"));
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 
 		// Crossing strokes (e.g. Playfair Display's "x") break the field along visible edges, which
@@ -1155,7 +1158,7 @@ _FORCE_INLINE_ TextServerAdvanced::FontGlyph TextServerAdvanced::rasterize_msdf(
 			if (!resolved.contours.empty()) {
 				shape = resolved;
 				edgeColoringSimple(shape, 3.0);
-				group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, -1, true, String("FontServerRasterizeMSDF"));
+				group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, msdf_tasks, true, String("FontServerRasterizeMSDF"));
 				WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 			}
 		}
