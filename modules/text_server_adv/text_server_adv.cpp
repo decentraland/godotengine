@@ -1105,7 +1105,9 @@ _FORCE_INLINE_ TextServerAdvanced::FontGlyph TextServerAdvanced::rasterize_msdf(
 	shape.inverseYAxis = true;
 	shape.normalize();
 
-	msdfgen::Shape::Bounds bounds = shape.getBounds(p_pixel_range);
+	// Texels further than half the range from the outline only hold saturated values, so a wider
+	// border just wastes atlas space.
+	msdfgen::Shape::Bounds bounds = shape.getBounds(p_pixel_range * 0.5 + 1.0);
 
 	FontGlyph chr;
 	chr.found = true;
