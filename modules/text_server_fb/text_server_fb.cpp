@@ -33,6 +33,7 @@
 #ifdef GDEXTENSION
 // Headers for building as GDExtension plug-in.
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -49,6 +50,7 @@ using namespace godot;
 #elif defined(GODOT_MODULE)
 // Headers for building as built-in module.
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
 #include "core/io/file_access.h"
@@ -71,6 +73,8 @@ GODOT_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides c
 #include <core/contour-combiners.h>
 #include <core/edge-selectors.h>
 #include <msdfgen.h>
+
+#include "thirdparty/clipper2/include/clipper2/clipper.h"
 
 GODOT_GCC_WARNING_POP
 GODOT_MSVC_WARNING_POP
@@ -331,6 +335,15 @@ _FORCE_INLINE_ TextServerFallback::FontTexturePosition TextServerFallback::find_
 				ERR_FAIL_V(ret);
 			}
 		}
+		// Full MSDF pages never change again: once uploaded, keep only the GPU copy. The editor keeps
+		// the images, imported pre-renders are saved from them.
+		if (p_msdf && !Engine::get_singleton()->is_editor_hint()) {
+			for (int32_t i = 0; i < p_data->textures.size(); i++) {
+				if (!ct[i].dirty && ct[i].texture.is_valid()) {
+					ct[i].image.unref();
+				}
+			}
+		}
 		p_data->textures.push_back(tex);
 
 		int32_t idx = p_data->textures.size() - 1;
@@ -419,6 +432,77 @@ void TextServerFallback::_generateMTSDF_threaded(void *p_td, uint32_t p_y) {
 	}
 }
 
+// True when the generated field disagrees with the nonzero fill somewhere: the glyph has
+// overlapping or crossing contours.
+static bool _msdf_has_sign_errors(const msdfgen::Bitmap<float, 4> &p_image, const msdfgen::Shape &p_shape, const msdfgen::Projection &p_projection) {
+	msdfgen::Bitmap<float, 1> fill(p_image.width(), p_image.height());
+	msdfgen::rasterize(fill, p_shape, p_projection, msdfgen::FILL_NONZERO);
+	for (int y = 0; y < p_image.height(); y++) {
+		for (int x = 0; x < p_image.width(); x++) {
+			const float *px = p_image(x, y);
+			if ((msdfgen::median(px[0], px[1], px[2]) > 0.5f) != (*fill(x, y) > 0.5f)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Unions the contours (curves sampled into short lines) so crossing strokes leave no hidden
+// edges, which would otherwise break the distance field along visible edges.
+static msdfgen::Shape _msdf_resolve_overlaps(const msdfgen::Shape &p_shape) {
+	const double step = 0.25; // Shape units, about a quarter of a source pixel.
+	Clipper2Lib::PathsD paths;
+	for (const msdfgen::Contour &contour : p_shape.contours) {
+		Clipper2Lib::PathD path;
+		for (const msdfgen::EdgeHolder &edge : contour.edges) {
+			int order = edge->type();
+			if (order == msdfgen::LinearSegment::EDGE_TYPE) {
+				msdfgen::Point2 p = edge->point(1);
+				path.push_back(Clipper2Lib::PointD(p.x, p.y));
+				continue;
+			}
+			const msdfgen::Point2 *cp = order == msdfgen::QuadraticSegment::EDGE_TYPE ? static_cast<const msdfgen::QuadraticSegment *>(&*edge)->p : static_cast<const msdfgen::CubicSegment *>(&*edge)->p;
+			double length = 0.0;
+			for (int i = 1; i <= order; i++) {
+				length += (cp[i] - cp[i - 1]).length();
+			}
+			int steps = CLAMP((int)Math::ceil(length / step), 4, 64);
+			for (int i = 1; i <= steps; i++) {
+				msdfgen::Point2 p = edge->point((double)i / steps);
+				path.push_back(Clipper2Lib::PointD(p.x, p.y));
+			}
+		}
+		if (path.size() >= 3) {
+			paths.push_back(path);
+		}
+	}
+
+	msdfgen::Shape resolved;
+	resolved.inverseYAxis = p_shape.inverseYAxis;
+	double area = 0.0;
+	for (const Clipper2Lib::PathD &path : Clipper2Lib::Union(paths, Clipper2Lib::FillRule::NonZero, 3)) {
+		if (path.size() < 3) {
+			continue;
+		}
+		msdfgen::Contour &contour = resolved.addContour();
+		for (size_t i = 0; i < path.size(); i++) {
+			const Clipper2Lib::PointD &a = path[i];
+			const Clipper2Lib::PointD &b = path[(i + 1) % path.size()];
+			contour.addEdge(new msdfgen::LinearSegment(msdfgen::Point2(a.x, a.y), msdfgen::Point2(b.x, b.y)));
+			area += a.x * b.y - b.x * a.y;
+		}
+	}
+	// Same orientation as rasterize_msdf gives FreeType outlines.
+	if (area > 0.0) {
+		for (msdfgen::Contour &contour : resolved.contours) {
+			contour.reverse();
+		}
+	}
+	resolved.normalize();
+	return resolved;
+}
+
 _FORCE_INLINE_ TextServerFallback::FontGlyph TextServerFallback::rasterize_msdf(FontFallback *p_font_data, FontForSizeFallback *p_data, int p_pixel_range, int p_rect_margin, FT_Outline *p_outline, const Vector2 &p_advance) const {
 	msdfgen::Shape shape;
 
@@ -450,7 +534,9 @@ _FORCE_INLINE_ TextServerFallback::FontGlyph TextServerFallback::rasterize_msdf(
 	shape.inverseYAxis = true;
 	shape.normalize();
 
-	msdfgen::Shape::Bounds bounds = shape.getBounds(p_pixel_range);
+	// Texels further than half the range from the outline only hold saturated values, so a wider
+	// border just wastes atlas space.
+	msdfgen::Shape::Bounds bounds = shape.getBounds(p_pixel_range * 0.5 + 1.0);
 
 	FontGlyph chr;
 	chr.found = true;
@@ -489,9 +575,29 @@ _FORCE_INLINE_ TextServerFallback::FontGlyph TextServerFallback::rasterize_msdf(
 		td.projection = &projection;
 		td.distancePixelConversion = &distancePixelConversion;
 
-		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerFallback::_generateMTSDF_threaded, &td, h, -1, true, String("TextServerFBRenderMSDF"));
+		// Off the main thread (e.g. glyphs pre-rendered in the background), leave half the cores
+		// free: saturating all of them stalls the main thread on phones.
+		int msdf_tasks = WorkerThreadPool::get_singleton()->get_thread_index() >= 0 ? MAX(1, WorkerThreadPool::get_singleton()->get_thread_count() / 2) : -1;
+		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerFallback::_generateMTSDF_threaded, &td, h, msdf_tasks, true, String("TextServerFBRenderMSDF"));
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 
+		// Crossing strokes (e.g. Playfair Display's "x") break the field along visible edges, which
+		// the sign fix below can't repair: resolve the outline and regenerate. Most glyphs skip this.
+		if (_msdf_has_sign_errors(image, shape, projection)) {
+			msdfgen::Shape resolved = _msdf_resolve_overlaps(shape);
+			if (!resolved.contours.empty()) {
+				shape = resolved;
+				edgeColoringSimple(shape, 3.0);
+				group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerFallback::_generateMTSDF_threaded, &td, h, msdf_tasks, true, String("TextServerFBRenderMSDF"));
+				WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
+			}
+		}
+
+		// Overlapping or self-intersecting contours (common in variable and CJK fonts) leave
+		// texels with the wrong inside/outside sign. Fix them from the nonzero fill, as msdfgen's
+		// own scanline pass does; distance checks would undo the fix.
+		msdfgen::distanceSignCorrection(image, shape, projection, msdfgen::FILL_NONZERO);
+		config.errorCorrection.distanceCheckMode = msdfgen::ErrorCorrectionConfig::DO_NOT_CHECK_DISTANCE;
 		msdfgen::msdfErrorCorrection(image, shape, projection, p_pixel_range, config);
 
 		{
@@ -658,7 +764,8 @@ bool TextServerFallback::_ensure_glyph(FontFallback *p_font_data, const Vector2i
 		bool tx_valid = true;
 		if (E->value.texture_idx >= 0) {
 			if (E->value.texture_idx < fd->textures.size()) {
-				tx_valid = fd->textures[E->value.texture_idx].image.is_valid();
+				// Full MSDF pages keep only their GPU texture.
+				tx_valid = fd->textures[E->value.texture_idx].image.is_valid() || fd->textures[E->value.texture_idx].texture.is_valid();
 			} else {
 				tx_valid = false;
 			}
@@ -1403,6 +1510,9 @@ void TextServerFallback::_font_set_generate_mipmaps(const RID &p_font_rid, bool 
 	if (fd->mipmaps != p_generate_mipmaps) {
 		for (KeyValue<Vector2i, FontForSizeFallback *> &E : fd->cache) {
 			for (int i = 0; i < E.value->textures.size(); i++) {
+				if (E.value->textures[i].image.is_null()) {
+					continue; // Full page, only on the GPU.
+				}
 				E.value->textures.write[i].dirty = true;
 				E.value->textures.write[i].texture = Ref<ImageTexture>();
 			}

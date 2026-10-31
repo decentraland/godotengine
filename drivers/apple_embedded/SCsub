@@ -12,16 +12,19 @@ env_apple_embedded = env.Clone()
 # Enable module support
 env_apple_embedded.Append(CCFLAGS=["-fmodules", "-fcxx-modules"])
 
-# Configure Swift builder
-apple_platform = env["APPLE_PLATFORM"]
-sdk_path = env["APPLE_SDK_PATH"]
-current_path = Dir(".").abspath
-bridging_header_filename = "bridging_header_apple_embedded.h"
-swift_files = Glob("*.swift")
-swift_file_names = list(map(lambda f: f.name, swift_files))
-setup_swift_builder(
-    env_apple_embedded, apple_platform, sdk_path, current_path, bridging_header_filename, swift_file_names
-)
+# Configure Swift builder. A host app (embedded_host=yes) owns the process entry point, so the
+# SwiftUI @main in app.swift (the only Swift file) is left out.
+embedded_host = env.get("embedded_host", False)
+swift_files = [] if embedded_host else Glob("*.swift")
+if swift_files:
+    apple_platform = env["APPLE_PLATFORM"]
+    sdk_path = env["APPLE_SDK_PATH"]
+    current_path = Dir(".").abspath
+    bridging_header_filename = "bridging_header_apple_embedded.h"
+    swift_file_names = list(map(lambda f: f.name, swift_files))
+    setup_swift_builder(
+        env_apple_embedded, apple_platform, sdk_path, current_path, bridging_header_filename, swift_file_names
+    )
 
 # Use bundled Vulkan headers
 vulkan_dir = "#thirdparty/vulkan"
@@ -29,4 +32,5 @@ env_apple_embedded.Prepend(CPPPATH=[vulkan_dir, vulkan_dir + "/include"])
 
 # Driver source files
 env_apple_embedded.add_source_files(env_apple_embedded.drivers_sources, "*.mm")
-env_apple_embedded.add_source_files(env_apple_embedded.drivers_sources, "*.swift")
+if swift_files:
+    env_apple_embedded.add_source_files(env_apple_embedded.drivers_sources, swift_files)

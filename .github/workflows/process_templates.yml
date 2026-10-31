@@ -121,6 +121,16 @@ jobs:
           zip -q -9 -r ../editors/${GODOT_LINUX_PATH}.zip ${GODOT_LINUX_PATH}
           zip -q -9 -r ../editors/${GODOT_WINDOWS_PATH}.zip ${GODOT_WINDOWS_PATH}
 
+      - name: Dump the GDExtension API of this build
+        run: |
+          # Published next to the editors so godot-explorer's gdext binds to the API of this exact
+          # fork build (GDRUST_GODOT_API_JSON), not to the stock Godot one.
+          chmod +x artifacts/godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64
+          mkdir -p api-dump && cd api-dump
+          ../artifacts/godot.${{ env.GODOT_VERSION }}.linux.editor.x86_64 --headless --dump-extension-api --dump-gdextension-interface --quit
+          test -s extension_api.json
+          cp extension_api.json gdextension_interface.h ../editors/
+
       - name: Prepare Editor MacOS Files
         run: |
           cp -r misc/dist/macos_tools.app Godot.app
@@ -150,6 +160,9 @@ jobs:
           mv artifacts/linux-template-release/linux_release.x86_64 templates/
           mv artifacts/windows-template-debug/windows_debug_x86_64.exe templates/
           mv artifacts/windows-template-release/windows_release_x86_64.exe templates/
+          # VIBE-CODED SPIKE: release template built with embedded_host=yes, linked by the React Native
+          # app that hosts the engine (godot-explorer rn/). Not part of ios.zip, which Godot's exporter uses.
+          cp artifacts/ios-template-release-host/libgodot.ios.template_release.arm64.a templates/ios_host_release.a
 
       - name: Compress individual files
         run: |
