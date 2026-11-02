@@ -2169,6 +2169,11 @@ Ref<Image> GLTFDocument::_parse_image_bytes_into_image(Ref<GLTFState> p_state, c
 	// (e.g. `image/jpeg` but the data is actually PNG).
 	// That's not *exactly* what the spec mandates but this lets us be
 	// lenient with bogus glb files which do exist in production.
+	// Also lenient with KTX2 data that has no or a bogus mimeType.
+	if (r_image->is_empty() && p_bytes.size() > 4 && p_bytes[0] == 0xAB && p_bytes[1] == 'K' && p_bytes[2] == 'T' && p_bytes[3] == 'X') {
+		r_image->load_ktx_from_buffer(p_bytes);
+		r_file_extension = ".ktx2";
+	}
 	if (r_image->is_empty()) {
 		// Per glTF 2.0 spec, PNG colorspace metadata (including gamma) MUST be ignored.
 		PNGDriverCommon::png_to_image(p_bytes.ptr(), p_bytes.size(), false, r_image, true);
