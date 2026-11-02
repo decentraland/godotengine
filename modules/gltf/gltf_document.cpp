@@ -2159,6 +2159,9 @@ Ref<Image> GLTFDocument::_parse_image_bytes_into_image(Ref<GLTFState> p_state, c
 	} else if (p_mime_type == "image/jpeg") {
 		r_image->load_jpg_from_buffer(p_bytes);
 		r_file_extension = ".jpg";
+	} else if (p_mime_type == "image/ktx2") {
+		r_image->load_ktx_from_buffer(p_bytes);
+		r_file_extension = ".ktx2";
 	}
 	// If we didn't pass the above tests, we attempt loading as PNG and then JPEG directly.
 	// This covers URIs with base64-encoded data with application/* type but
