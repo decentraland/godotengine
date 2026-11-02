@@ -432,6 +432,8 @@ void TextServerFallback::_generateMTSDF_threaded(void *p_td, uint32_t p_y) {
 	}
 }
 
+// Keep these two helpers in sync with text_server_adv.cpp.
+
 // True when the generated field disagrees with the nonzero fill somewhere: the glyph has
 // overlapping or crossing contours.
 static bool _msdf_has_sign_errors(const msdfgen::Bitmap<float, 4> &p_image, const msdfgen::Shape &p_shape, const msdfgen::Projection &p_projection) {
@@ -450,8 +452,21 @@ static bool _msdf_has_sign_errors(const msdfgen::Bitmap<float, 4> &p_image, cons
 
 // Unions the contours (curves sampled into short lines) so crossing strokes leave no hidden
 // edges, which would otherwise break the distance field along visible edges.
+// Returns an empty shape (keep the original) for glyphs too complex to resolve.
 static msdfgen::Shape _msdf_resolve_overlaps(const msdfgen::Shape &p_shape) {
-	const double step = 0.25; // Shape units, about a quarter of a source pixel.
+	// Bounds the work on scene-supplied fonts; real glyphs stay far below it (CJK peaks near 300).
+	const int max_edges = 2048;
+	int edge_count = 0;
+	for (const msdfgen::Contour &contour : p_shape.contours) {
+		edge_count += contour.edges.size();
+	}
+	if (edge_count > max_edges) {
+		return msdfgen::Shape();
+	}
+
+	// Curves are sampled every ~0.25 shape units (a quarter of a source pixel), at most 64
+	// segments per curve.
+	const double step = 0.25;
 	Clipper2Lib::PathsD paths;
 	for (const msdfgen::Contour &contour : p_shape.contours) {
 		Clipper2Lib::PathD path;
@@ -1892,7 +1907,8 @@ TypedArray<Dictionary> TextServerFallback::_font_get_size_cache_info(const RID &
 		size_info["textures"] = E.value->textures.size();
 		uint64_t sz = 0;
 		for (const ShelfPackTexture &tx : E.value->textures) {
-			sz += tx.image->get_data_size() * 2;
+			// Full MSDF pages keep only the GPU copy (RGBA8).
+			sz += tx.image.is_valid() ? tx.image->get_data_size() * 2 : (uint64_t)tx.texture_w * tx.texture_h * 4;
 		}
 		size_info["textures_size"] = sz;
 		ret.push_back(size_info);
