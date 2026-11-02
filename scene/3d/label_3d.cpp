@@ -672,14 +672,15 @@ void Label3D::_shape() {
 		int gl_size = TS->shaped_text_get_glyph_count(lines_rid[i]);
 		float line_width = TS->shaped_text_get_width(lines_rid[i]) * pixel_size;
 
-		// Non-MSDF RGBA8 pages hold color glyphs (emoji). Image/BMFont RGBA8 pages count too: unlike
-		// the 2D path, Label3D can't tell them apart without a FreeType face check.
+		// Non-MSDF RGBA8 pages hold color glyphs (emoji); LCD fonts also use RGBA8 pages, so they're
+		// excluded. Image/BMFont RGBA8 pages count too: unlike the 2D path, Label3D can't tell them
+		// apart without a FreeType face check.
 		LocalVector<bool> color_glyphs;
 		color_glyphs.resize(gl_size);
 		for (int j = 0; j < gl_size; j++) {
 			color_glyphs[j] = false;
 			const Glyph &gl = glyphs[j];
-			if (gl.index == 0 || !gl.font_rid.is_valid() || TS->font_is_multichannel_signed_distance_field(gl.font_rid)) {
+			if (gl.index == 0 || !gl.font_rid.is_valid() || TS->font_is_multichannel_signed_distance_field(gl.font_rid) || TS->font_get_antialiasing(gl.font_rid) == TextServer::FONT_ANTIALIASING_LCD) {
 				continue;
 			}
 			Vector2i fill_size = Vector2i(gl.font_size, 0);

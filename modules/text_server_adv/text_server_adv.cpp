@@ -1174,7 +1174,9 @@ _FORCE_INLINE_ TextServerAdvanced::FontGlyph TextServerAdvanced::rasterize_msdf(
 		td.distancePixelConversion = &distancePixelConversion;
 
 		// Off the main thread (e.g. glyphs pre-rendered in the background), leave half the cores
-		// free: saturating all of them stalls the main thread on phones.
+		// free: saturating all of them stalls the main thread on phones. The wait below doesn't run
+		// other tasks, so if every pool thread blocks here the group never runs: keep concurrent
+		// rasterizing pool tasks below the thread count.
 		int msdf_tasks = WorkerThreadPool::get_singleton()->get_thread_index() >= 0 ? MAX(1, WorkerThreadPool::get_singleton()->get_thread_count() / 2) : -1;
 		WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_native_group_task(&TextServerAdvanced::_generateMTSDF_threaded, &td, h, msdf_tasks, true, String("FontServerRasterizeMSDF"));
 		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
