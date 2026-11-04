@@ -419,9 +419,9 @@ static const float earth_gravity = 9.80665;
 	// your user to move the screen in all directions and want consistent
 	// output
 #if defined(VISIONOS_ENABLED)
-	UIInterfaceOrientation interfaceOrientation = [UIApplication sharedApplication].delegate.window.windowScene.effectiveGeometry.interfaceOrientation;
+	UIInterfaceOrientation interfaceOrientation = self.window.windowScene.effectiveGeometry.interfaceOrientation;
 #else
-	UIInterfaceOrientation interfaceOrientation = [UIApplication sharedApplication].delegate.window.windowScene.interfaceOrientation;
+	UIInterfaceOrientation interfaceOrientation = self.window.windowScene.interfaceOrientation;
 #endif
 
 	switch (interfaceOrientation) {

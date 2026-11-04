@@ -38,4 +38,6 @@
 
 @property(strong, class, nonatomic) GDTViewController *viewController;
 
+- (int)startEngineWithArgc:(int)argc argv:(char **)argv;
+
 @end

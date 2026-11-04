@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #import "app_delegate_service.h"
+#import "godot_host.h"
 
 #import "godot_view_apple_embedded.h"
 #import "godot_view_controller.h"
@@ -83,12 +84,20 @@ static GDTViewController *mainViewController = nil;
 		gargv[i] = strdup([arg UTF8String]);
 	}
 
-	int err = apple_embedded_main(gargc, gargv);
-
-	if (err != 0) {
+	if ([self startEngineWithArgc:gargc argv:gargv] != 0) {
 		// bail, things did not go very well for us, should probably output a message on screen with our error code...
 		exit(0);
 		return NO;
+	}
+
+	return YES;
+}
+
+- (int)startEngineWithArgc:(int)argc argv:(char **)argv {
+	int err = apple_embedded_main(argc, argv);
+
+	if (err != 0) {
+		return err;
 	}
 
 	[[NSNotificationCenter defaultCenter]
@@ -124,7 +133,7 @@ static GDTViewController *mainViewController = nil;
 
 	[[AVAudioSession sharedInstance] setCategory:category withOptions:options error:nil];
 
-	return YES;
+	return 0;
 }
 
 - (void)onAudioInterruption:(NSNotification *)notification {
@@ -200,3 +209,67 @@ static GDTViewController *mainViewController = nil;
 }
 
 @end
+
+// MARK: Host API (see godot_host.h)
+
+static bool host_mode = false;
+static GDTAppDelegateService *host_service = nil;
+
+bool godot_host_is_hosted(void) {
+	return host_mode;
+}
+
+int godot_host_init(int argc, const char *const *argv) {
+	if (host_service) {
+		return 0;
+	}
+	host_mode = true;
+	gargc = argc;
+	gargv = (char **)malloc(sizeof(char *) * argc);
+	for (int i = 0; i < argc; i++) {
+		gargv[i] = strdup(argv[i]);
+	}
+	host_service = [GDTAppDelegateService new];
+	int err = [host_service startEngineWithArgc:gargc argv:gargv];
+	if (err != 0) {
+		host_service = nil;
+		return err;
+	}
+	godot_host_register_bridge();
+	return 0;
+}
+
+void godot_host_focus_in(void) {
+	if (OS_AppleEmbedded::get_singleton()) {
+		OS_AppleEmbedded::get_singleton()->on_focus_in();
+	}
+}
+
+void godot_host_focus_out(void) {
+	if (OS_AppleEmbedded::get_singleton()) {
+		OS_AppleEmbedded::get_singleton()->on_focus_out();
+	}
+}
+
+void godot_host_enter_background(void) {
+	if (OS_AppleEmbedded::get_singleton()) {
+		OS_AppleEmbedded::get_singleton()->on_enter_background();
+	}
+}
+
+void godot_host_exit_background(void) {
+	if (OS_AppleEmbedded::get_singleton()) {
+		OS_AppleEmbedded::get_singleton()->on_exit_background();
+	}
+}
+
+void godot_host_memory_warning(void) {
+	if (OS::get_singleton() && OS::get_singleton()->get_main_loop()) {
+		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_OS_MEMORY_WARNING);
+	}
+}
+
+void godot_host_shutdown(void) {
+	apple_embedded_finish();
+	host_service = nil;
+}

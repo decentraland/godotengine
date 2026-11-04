@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#import "godot_host.h"
 #import "godot_view_renderer.h"
 
 #import "display_server_apple_embedded.h"
@@ -60,6 +61,9 @@
 	}
 
 	if (!OS::get_singleton()) {
+		if (godot_host_is_hosted()) {
+			return NO;
+		}
 		exit(0);
 	}
 
