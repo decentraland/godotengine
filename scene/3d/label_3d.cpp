@@ -368,7 +368,7 @@ Ref<TriangleMesh> Label3D::generate_triangle_mesh() const {
 	return triangle_mesh;
 }
 
-void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, float p_outline_size, bool p_outline_only) {
+void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, const Color &p_modulate, int p_priority, float p_outline_size, bool p_outline_only, bool p_decoration, bool p_color_glyph) {
 	if (p_glyph.index == 0) {
 		r_offset.x += p_glyph.advance * pixel_size * p_glyph.repeat; // Non visual character, skip.
 		return;
@@ -404,6 +404,19 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 	}
 
 	bool msdf = TS->font_is_multichannel_signed_distance_field(p_glyph.font_rid);
+
+	// A shadow or outline pass would cover a color glyph with a solid copy, and modulate would
+	// tint it, so draw it once and untinted, like the 2D path.
+	Color glyph_modulate = p_modulate;
+	if (p_color_glyph) {
+		if (p_decoration) {
+			r_offset.x += p_glyph.advance * pixel_size * p_glyph.repeat;
+			return;
+		}
+		if (!TS->font_is_modulate_color_glyphs(p_glyph.font_rid)) {
+			glyph_modulate = Color(1, 1, 1, p_modulate.a);
+		}
+	}
 
 	for (int j = 0; j < p_glyph.repeat; j++) {
 		SurfaceKey key = SurfaceKey(tex.get_id(), p_priority, p_outline_size_i, p_outline_only);
@@ -473,7 +486,7 @@ void Label3D::_generate_glyph_surfaces(const Glyph &p_glyph, Vector2 &r_offset, 
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 1] = 0.0;
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 2] = 0.0;
 			s.mesh_tangents.write[(s.offset * 16) + (i * 4) + 3] = 1.0;
-			s.mesh_colors.write[(s.offset * 4) + i] = p_modulate;
+			s.mesh_colors.write[(s.offset * 4) + i] = glyph_modulate;
 			s.mesh_uvs.write[(s.offset * 4) + i] = Vector2();
 		}
 
@@ -659,6 +672,25 @@ void Label3D::_shape() {
 		int gl_size = TS->shaped_text_get_glyph_count(lines_rid[i]);
 		float line_width = TS->shaped_text_get_width(lines_rid[i]) * pixel_size;
 
+		// Non-MSDF RGBA8 pages hold color glyphs (emoji); LCD fonts also use RGBA8 pages, so they're
+		// excluded. Image/BMFont RGBA8 pages count too: unlike the 2D path, Label3D can't tell them
+		// apart without a FreeType face check.
+		LocalVector<bool> color_glyphs;
+		color_glyphs.resize(gl_size);
+		for (int j = 0; j < gl_size; j++) {
+			color_glyphs[j] = false;
+			const Glyph &gl = glyphs[j];
+			if (gl.index == 0 || !gl.font_rid.is_valid() || TS->font_is_multichannel_signed_distance_field(gl.font_rid) || TS->font_get_antialiasing(gl.font_rid) == TextServer::FONT_ANTIALIASING_LCD) {
+				continue;
+			}
+			Vector2i fill_size = Vector2i(gl.font_size, 0);
+			int64_t tex_idx = TS->font_get_glyph_texture_idx(gl.font_rid, fill_size, gl.index);
+			if (tex_idx >= 0) {
+				Ref<Image> page = TS->font_get_texture_image(gl.font_rid, fill_size, tex_idx);
+				color_glyphs[j] = page.is_valid() && page->get_format() == Image::FORMAT_RGBA8;
+			}
+		}
+
 		switch (horizontal_alignment) {
 			case HORIZONTAL_ALIGNMENT_LEFT:
 				offset.x = 0.0;
@@ -688,12 +720,12 @@ void Label3D::_shape() {
 			if (shadow_outline_size > 0.0) {
 				Vector2 sh_offset = shadow_base;
 				for (int j = 0; j < gl_size; j++) {
-					_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, shadow_outline_size);
+					_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, shadow_outline_size, false, true, color_glyphs[j]);
 				}
 			}
 			Vector2 sh_offset = shadow_base;
 			for (int j = 0; j < gl_size; j++) {
-				_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority);
+				_generate_glyph_surfaces(glyphs[j], sh_offset, shadow_color, shadow_priority, 0.0, false, true, color_glyphs[j]);
 			}
 		}
 
@@ -706,7 +738,7 @@ void Label3D::_shape() {
 			// outline does not occlude the text when drawn in front of it.
 			Vector2 ol_offset = offset;
 			for (int j = 0; j < gl_size; j++) {
-				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, eff_outline_size, true);
+				_generate_glyph_surfaces(glyphs[j], ol_offset, outline_modulate, outline_render_priority, eff_outline_size, true, true, color_glyphs[j]);
 			}
 		}
 
@@ -720,7 +752,7 @@ void Label3D::_shape() {
 					glyph_modulate = modulate * (Color)span_meta;
 				}
 			}
-			_generate_glyph_surfaces(glyphs[j], offset, glyph_modulate, render_priority);
+			_generate_glyph_surfaces(glyphs[j], offset, glyph_modulate, render_priority, 0.0, false, false, color_glyphs[j]);
 		}
 		offset.y -= (TS->shaped_text_get_descent(lines_rid[i]) + line_spacing) * pixel_size;
 	}
