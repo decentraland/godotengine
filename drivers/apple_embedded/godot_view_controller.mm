@@ -28,7 +28,10 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#import "godot_host.h"
 #import "godot_view_controller.h"
+
+#import "app_delegate_service.h"
 
 #import "display_server_apple_embedded.h"
 #import "godot_keyboard_input_view.h"
@@ -122,6 +125,12 @@
 }
 
 - (void)loadView {
+	// A host app creates this controller itself; the display server finds its rendering layer
+	// through GDTAppDelegateService.viewController, so register it there.
+	if (godot_host_is_hosted() && !GDTAppDelegateService.viewController) {
+		GDTAppDelegateService.viewController = self;
+	}
+
 	GDTView *view = GDTViewCreate();
 	GDTViewRenderer *renderer = [[GDTViewRenderer alloc] init];
 
@@ -203,6 +212,9 @@
 
 - (void)displayLoadingOverlay {
 #if !defined(VISIONOS_ENABLED)
+	if (godot_host_is_hosted()) {
+		return;
+	}
 	NSBundle *bundle = [NSBundle mainBundle];
 	NSString *storyboardName = @"Launch Screen";
 
@@ -268,6 +280,9 @@
 // Propagate UI preferences to the root VC (the SwiftUI hosting controller doesn't delegate these).
 #ifdef IOS_ENABLED
 - (void)propagateUIPreferencesToRootViewController {
+	if (godot_host_is_hosted()) {
+		return;
+	}
 	UIViewController *rootVC = self.view.window.rootViewController;
 	if (!rootVC || rootVC == self) {
 		return;

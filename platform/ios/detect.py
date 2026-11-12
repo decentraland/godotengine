@@ -31,6 +31,9 @@ def get_opts():
         (("APPLE_SDK_PATH", "IOS_SDK_PATH"), "Path to the iOS SDK", ""),
         (("apple_target_triple", "ios_triple"), "Triple for the corresponding target Apple platform toolchain", ""),
         BoolVariable(("simulator", "ios_simulator"), "Build for Simulator", False),
+        BoolVariable(
+            "embedded_host", "Build for hosting inside another app (leaves out the SwiftUI @main entry point)", False
+        ),
         BoolVariable("generate_bundle", "Generate an APP bundle after building iOS/macOS binaries", False),
     ]
 
