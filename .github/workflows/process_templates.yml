@@ -66,7 +66,7 @@ jobs:
           mkdir -p "${ARTIFACTS_DIR}"
 
           # Download all artifacts for this run from R2
-          aws s3 sync "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" "${ARTIFACTS_DIR}/" \
+          bash "$GITHUB_WORKSPACE/.github/scripts/r2-retry.sh" s3 sync "s3://${R2_BUCKET}/artifacts/${RUN_ID}/" "${ARTIFACTS_DIR}/" \
             --endpoint-url "${R2_ENDPOINT}"
 
           echo "✓ All artifacts downloaded successfully from R2!"
@@ -171,7 +171,7 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           UPLOAD_PATH: ${{ steps.upload-path.outputs.UPLOAD_PATH }}
         run: |
-          aws s3 cp editors/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/editors/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/r2-retry.sh" s3 sync editors/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/editors/" --endpoint-url "${R2_ENDPOINT}"
           echo "✓ Uploaded editors to: ${UPLOAD_PATH}/editors/"
 
       - name: Upload compressed templates to R2
@@ -180,5 +180,5 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           UPLOAD_PATH: ${{ steps.upload-path.outputs.UPLOAD_PATH }}
         run: |
-          aws s3 cp compressed-templates/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/compressed-templates/" --recursive --endpoint-url "${R2_ENDPOINT}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/r2-retry.sh" s3 sync compressed-templates/ "s3://${R2_BUCKET}/${UPLOAD_PATH}/compressed-templates/" --endpoint-url "${R2_ENDPOINT}"
           echo "✓ Uploaded compressed templates to: ${UPLOAD_PATH}/compressed-templates/"

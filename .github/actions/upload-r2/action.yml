@@ -67,17 +67,17 @@ runs:
           for file in ${UPLOAD_PATH}; do
             if [[ -f "$file" ]]; then
               echo "Uploading: $file"
-              aws s3 cp "$file" "s3://${R2_BUCKET}/${R2_PATH}$(basename $file)" \
+              bash "${{ github.action_path }}/../../scripts/r2-retry.sh" s3 cp "$file" "s3://${R2_BUCKET}/${R2_PATH}$(basename $file)" \
                 --endpoint-url "${R2_ENDPOINT}"
             fi
           done
         elif [[ -d "${UPLOAD_PATH}" ]]; then
           # Path is a directory - use sync
-          aws s3 sync "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}" \
+          bash "${{ github.action_path }}/../../scripts/r2-retry.sh" s3 sync "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}" \
             --endpoint-url "${R2_ENDPOINT}"
         elif [[ -f "${UPLOAD_PATH}" ]]; then
           # Path is a single file
-          aws s3 cp "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}$(basename ${UPLOAD_PATH})" \
+          bash "${{ github.action_path }}/../../scripts/r2-retry.sh" s3 cp "${UPLOAD_PATH}" "s3://${R2_BUCKET}/${R2_PATH}$(basename ${UPLOAD_PATH})" \
             --endpoint-url "${R2_ENDPOINT}"
         else
           echo "Error: Path '${UPLOAD_PATH}' not found or invalid"
