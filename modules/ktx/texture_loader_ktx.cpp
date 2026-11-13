@@ -122,7 +122,6 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 	uint32_t height = ktx_texture->baseHeight;
 	uint32_t mipmaps = ktx_texture->numLevels;
 	Image::Format format;
-	bool srgb = false;
 
 	switch (ktx_texture->classId) {
 		case ktxTexture1_c:
@@ -135,11 +134,9 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 					break;
 				case GL_SRGB8:
 					format = Image::FORMAT_RGB8;
-					srgb = true;
 					break;
 				case GL_SRGB8_ALPHA8:
 					format = Image::FORMAT_RGBA8;
-					srgb = true;
 					break;
 				case GL_R8:
 				case GL_R8UI:
@@ -356,11 +353,9 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 					break;
 				case VK_FORMAT_R8G8B8_SRGB:
 					format = Image::FORMAT_RGB8;
-					srgb = true;
 					break;
 				case VK_FORMAT_R8G8B8A8_SRGB:
 					format = Image::FORMAT_RGBA8;
-					srgb = true;
 					break;
 				case VK_FORMAT_R8_UINT:
 					format = Image::FORMAT_R8;
@@ -548,10 +543,7 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 	}
 
 	Ref<Image> img = memnew(Image(width, height, mipmaps - 1, format, src_data));
-	if (srgb) {
-		img->srgb_to_linear();
-	}
-
+	// sRGB data is kept as encoded: materials and the glTF contract sample color textures as sRGB.
 	if (r_error) {
 		*r_error = OK;
 	}
